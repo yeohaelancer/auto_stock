@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jdwork.autotrading.account.mapper.PositionMapper">
+
+    <!-- accountId + trading_mode 둘 다 필수 파라미터 — 모의/실전 포지션 혼동 방지 -->
+    <!-- Both accountId and trading_mode are required parameters — prevents mock/live position mixups -->
+    <select id="findByAccountAndMode" resultType="com.jdwork.autotrading.account.domain.Position">
+        SELECT position_id, account_id, trading_mode, stock_code,
+               quantity, avg_price, stop_loss_price, take_profit_price
+        FROM position
+        WHERE account_id = #{accountId}
+          AND trading_mode = #{tradingMode}
+          AND quantity > 0
+          AND deleted_at IS NULL
+        ORDER BY stock_code
+    </select>
+
+</mapper>

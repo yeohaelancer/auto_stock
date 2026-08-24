@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jdwork.autotrading.account.mapper.AccountSnapshotMapper">
+
+    <select id="findLatest" resultType="com.jdwork.autotrading.account.domain.AccountSnapshot">
+        SELECT account_id, trading_mode, snapshot_date, total_value, cash_balance, daily_pnl, daily_pnl_rate
+        FROM account_snapshot
+        WHERE account_id = #{accountId}
+          AND trading_mode = #{tradingMode}
+          AND deleted_at IS NULL
+        ORDER BY snapshot_date DESC
+        LIMIT 1
+    </select>
+
+    <insert id="upsert" parameterType="com.jdwork.autotrading.account.domain.AccountSnapshot">
+        INSERT INTO account_snapshot (account_id, trading_mode, snapshot_date, total_value, cash_balance, daily_pnl, daily_pnl_rate)
+        VALUES (#{accountId}, #{tradingMode}, #{snapshotDate}, #{totalValue}, #{cashBalance}, #{dailyPnl}, #{dailyPnlRate})
+        ON CONFLICT (account_id, trading_mode, snapshot_date) WHERE deleted_at IS NULL
+        DO UPDATE SET
+            total_value = EXCLUDED.total_value,
+            cash_balance = EXCLUDED.cash_balance,
+            daily_pnl = EXCLUDED.daily_pnl,
+            daily_pnl_rate = EXCLUDED.daily_pnl_rate
+    </insert>
+
+</mapper>

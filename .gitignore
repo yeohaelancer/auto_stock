@@ -1,0 +1,32 @@
+# 시크릿/환경변수 — 절대 커밋 금지 (secrets — never commit)
+.env
+.env.*
+!.env.example
+
+# Gradle / Java
+backend/.gradle/
+backend/build/
+backend/out/
+*.class
+!backend/gradlew
+!backend/gradlew.bat
+
+# Python
+ml-service/__pycache__/
+ml-service/*.pyc
+ml-service/.venv/
+ml-service/venv/
+ml-service/model.pkl
+
+# Node / Vue
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db

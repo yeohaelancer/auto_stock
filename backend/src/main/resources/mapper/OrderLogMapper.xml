@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jdwork.autotrading.order.mapper.OrderLogMapper">
+
+    <insert id="insert" parameterType="com.jdwork.autotrading.order.domain.OrderLog">
+        INSERT INTO order_log (
+            order_id, signal_id, stock_code, trading_mode, order_type,
+            quantity, order_price, executed_price, execution_status,
+            blocked_by_risk_id, kiwoom_order_no
+        ) VALUES (
+            #{orderId}, #{signalId}, #{stockCode}, #{tradingMode}, #{orderType},
+            #{quantity}, #{orderPrice}, #{executedPrice}, #{executionStatus},
+            #{blockedByRiskId}, #{kiwoomOrderNo}
+        )
+    </insert>
+
+    <!-- trading_mode 필터는 필수 파라미터 — 모의/실전 데이터 혼동 방지 -->
+    <!-- trading_mode filter is a required parameter — prevents mock/live data mixups -->
+    <select id="findRecentByMode" resultType="com.jdwork.autotrading.order.domain.OrderLog">
+        SELECT order_id, signal_id, stock_code, trading_mode, order_type,
+               quantity, order_price, executed_price, execution_status,
+               blocked_by_risk_id, kiwoom_order_no, created_at
+        FROM order_log
+        WHERE trading_mode = #{tradingMode}
+          AND deleted_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="sumFilledValue" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(executed_price * quantity), 0)
+        FROM order_log
+        WHERE trading_mode = #{tradingMode}
+          AND order_type = #{orderType}
+          AND execution_status = 'FILLED'
+          AND deleted_at IS NULL
+    </select>
+
+    <select id="findFilledByMode" resultType="com.jdwork.autotrading.order.domain.OrderLog">
+        SELECT order_id, signal_id, stock_code, trading_mode, order_type,
+               quantity, order_price, executed_price, execution_status,
+               blocked_by_risk_id, kiwoom_order_no, created_at
+        FROM order_log
+        WHERE trading_mode = #{tradingMode}
+          AND execution_status = 'FILLED'
+          AND deleted_at IS NULL
+        ORDER BY stock_code, created_at ASC
+    </select>
+
+</mapper>

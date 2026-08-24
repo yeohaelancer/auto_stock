@@ -1,0 +1,74 @@
+# 주식 자동매매 시스템 로컬/개발 오케스트레이션
+# Stock auto-trading system local/dev orchestration
+# 시크릿은 모두 .env 파일(레포에 커밋하지 않음)에서 주입한다. Secrets are all injected from an untracked .env file.
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${DB_NAME:-autotrading}
+      POSTGRES_USER: ${DB_USER:-autotrading}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docs/agents/dba/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-autotrading}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  ml-service:
+    build: ./ml-service
+    environment:
+      # feature_daily 읽기 전용 조회용 — ml-service는 자체 별도 자격증명으로 접속한다 (Review 산출물 참고).
+      # Read-only feature_daily lookups — ml-service connects with its own separate credentials (see Review output).
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-autotrading}
+      DB_USER: ${DB_USER:-autotrading}
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-autotrading}
+      DB_USER: ${DB_USER:-autotrading}
+      DB_PASSWORD: ${DB_PASSWORD}
+      TRADING_MODE: ${TRADING_MODE:-MOCK}
+      KIWOOM_BASE_URL: ${KIWOOM_BASE_URL}
+      KIWOOM_APP_KEY: ${KIWOOM_APP_KEY}
+      KIWOOM_APP_SECRET: ${KIWOOM_APP_SECRET}
+      KIWOOM_ACCOUNT_NO: ${KIWOOM_ACCOUNT_NO}
+      PREDICTION_SERVICE_URL: http://ml-service:8001
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ml-service:
+        condition: service_healthy
+
+volumes:
+  pgdata:

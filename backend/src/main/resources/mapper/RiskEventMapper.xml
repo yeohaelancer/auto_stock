@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jdwork.autotrading.risk.mapper.RiskEventMapper">
+
+    <insert id="insert" parameterType="com.jdwork.autotrading.risk.domain.RiskEvent"
+            useGeneratedKeys="true" keyProperty="riskLogId" keyColumn="risk_log_id">
+        INSERT INTO risk_log (event_type, occurred_at, account_id, trading_mode, action_taken)
+        VALUES (#{eventType}, #{occurredAt}, #{accountId}, #{tradingMode}, #{actionTaken})
+    </insert>
+
+</mapper>

@@ -1,0 +1,39 @@
+# 주식 자동매매 백엔드 설정
+# Stock auto-trading backend configuration
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:autotrading}
+    username: ${DB_USER:autotrading}
+    password: ${DB_PASSWORD:} # 반드시 환경변수로 주입 (must be injected via environment variable)
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+trading:
+  # MOCK: 모의투자 / LIVE: 실거래 — 설정값 변경만으로 전환 (설계 원칙 §3.3)
+  # MOCK: paper trading / LIVE: real trading — switched via config only (design doc §3.3)
+  mode: ${TRADING_MODE:MOCK}
+  kiwoom:
+    base-url: ${KIWOOM_BASE_URL:https://mockapi.kiwoom.com} # 모의투자 기본값, 실전은 별도 URL로 환경변수 교체
+    app-key: ${KIWOOM_APP_KEY:}
+    app-secret: ${KIWOOM_APP_SECRET:}
+    account-no: ${KIWOOM_ACCOUNT_NO:}
+  risk:
+    daily-loss-limit-rate: ${DAILY_LOSS_LIMIT_RATE:0.03} # 일일 최대 손실 한도 3% (기본값, 운영 시 조정)
+    max-position-ratio-per-stock: ${MAX_POSITION_RATIO_PER_STOCK:0.1} # 종목당 최대 비중 10%
+    min-cash-ratio: ${MIN_CASH_RATIO:0.2} # 최소 현금 보유 비율 20%
+  prediction:
+    service-url: ${PREDICTION_SERVICE_URL:http://localhost:8001} # FastAPI ML 서비스
+  mock:
+    # 모의투자 초기 시드머니 — 현금 잔고는 "시드머니 - 누적매수 + 누적매도"로 계산한다 (BUG-006).
+    # 실거래(LIVE)에는 사용하지 않음: LIVE 잔고는 반드시 실제 계좌 조회 API로만 산정해야 한다.
+    initial-capital: ${MOCK_INITIAL_CAPITAL:10000000}
+  universe:
+    # 이 기간(영업일 근사치, 달력일 기준) 동안 시세가 없으면 거래정지 후보로 표시 (preMarketJob 휴리스틱)
+    stale-trading-days: ${UNIVERSE_STALE_TRADING_DAYS:5}
+  backtest:
+    # 매수+매도 양방향 거래대금 기준 비용률 — 수수료+세금 등을 뭉뚱그린 근사치, 운영 시 조정 필요
+    commission-rate: ${BACKTEST_COMMISSION_RATE:0.00015}
+    slippage-rate: ${BACKTEST_SLIPPAGE_RATE:0.001}
