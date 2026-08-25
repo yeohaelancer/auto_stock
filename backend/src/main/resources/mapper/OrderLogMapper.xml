@@ -47,4 +47,23 @@
         ORDER BY stock_code, created_at ASC
     </select>
 
+    <select id="findUnresolvedLiveOrders" resultType="com.jdwork.autotrading.order.domain.OrderLog">
+        SELECT order_id, signal_id, stock_code, trading_mode, order_type,
+               quantity, order_price, executed_price, execution_status,
+               blocked_by_risk_id, kiwoom_order_no, created_at
+        FROM order_log
+        WHERE trading_mode = #{tradingMode}
+          AND execution_status IN ('PENDING', 'PARTIAL')
+          AND kiwoom_order_no IS NOT NULL
+          AND deleted_at IS NULL
+    </select>
+
+    <update id="updateFillStatus">
+        UPDATE order_log
+        SET execution_status = #{executionStatus},
+            executed_price = #{executedPrice},
+            updated_at = now()
+        WHERE order_id = #{orderId}
+    </update>
+
 </mapper>

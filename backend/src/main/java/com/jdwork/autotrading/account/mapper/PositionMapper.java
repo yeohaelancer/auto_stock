@@ -16,4 +16,14 @@ import java.util.List;
 public interface PositionMapper {
 
     List<Position> findByAccountAndMode(@Param("accountId") String accountId, @Param("tradingMode") String tradingMode);
+
+    /**
+     * 키움 실계좌 잔고 조회 결과로 포지션을 갱신한다(upsert) — LIVE 모드 postMarketJob에서 사용.
+     * quantity=0인 종목도 그대로 저장되며, findByAccountAndMode의 "quantity > 0" 필터가 자연스럽게
+     * 청산된 포지션을 화면에서 숨겨준다 (별도 삭제 로직 불필요).
+     * Upserts a position from a real Kiwoom account balance lookup — used by the LIVE-mode
+     * postMarketJob. Entries with quantity=0 are still stored; findByAccountAndMode's
+     * "quantity > 0" filter naturally hides closed-out positions (no separate delete needed).
+     */
+    void upsertFromBalance(Position position);
 }

@@ -84,9 +84,33 @@
 - [x] Dev BUG-003 구현 완료 (AI 예측 실모델/실피처 배선, 합성 라벨 명시) → QA 재검증 승인 (36/36)
 - [x] DevOps 확인 완료 (ml-service DB 접속·시드머니 환경변수 반영) → **모의투자(MOCK) 릴리즈 승인 유지**. 실거래(LIVE) 전환은 Phase 5까지 별도 수동 승인 필요 (설계 §3.3, §11)
 
-## 남은 작업 (버그 아님 — 구조적 전제조건)
-- **AI 모델 실전 사용 불가**: 현재 모델은 합성(synthetic) 라벨로 학습됨(`modelVersion=lgbm-synthetic-0.1`). 실제 시세 이력이 쌓이고 정답 라벨을 만들 수 있어야 재학습 가능 (Phase 2)
-- **LIVE 모드 잔고/시세/주문**: 키움증권 REST API 실제 인증·시세·주문 연동은 전 구간 TODO — 공식 개발자 문서 확인 후 구현 필요 (Phase 5 이전 필수)
+## ✅ 키움증권 REST API 실연동 (2026-08-24, 사용자가 포털에서 확인한 스펙 기준)
+사용자가 키움 API 사용 신청을 완료하고, 개발자 포털에서 직접 확인한 TR 스펙을 전달해 아래 항목을 실연동함:
+- **OAuth 접근토큰 발급** (`KiwoomTokenClient`): `POST /oauth2/token`, 만료 5분 전 자동 재발급
+- **일봉 시세 조회** (`KiwoomMarketRestClient`, TR: ka10086 일별주가요청): `POST /api/dostk/mrkcond`, OHLCV 전체 필드(거래량 포함) 매핑 완료
+- **매수/매도 주문** (`LiveOrderExecutor`, TR: kt10000/kt10001): `POST /api/dostk/ordr`, 지정가 주문 전송, 주문번호 수신까지 확인
+- **체결 확인** (`KiwoomFillInquiryClient` + `TradingScheduler.checkPendingFills`, TR: ka10076): LIVE 모드에서 1분마다 PENDING/PARTIAL 주문을 자동 확인해 FILLED/PARTIAL로 갱신
+- **LIVE 계좌 잔고/보유종목** (`KiwoomCashBalanceClient` TR: kt00001 + `KiwoomBalanceClient` TR: kt00018): `postMarketJob`이 이제 LIVE 모드도 스킵하지 않고 실제 예수금(명시적 필드) + 보유종목 평가액을 조합해 스냅샷·포지션을 저장. 이전에 시도했던 추론 기반 현금 계산은 폐기하고 명시적 `entr`(예수금) 필드로 교체 — Phase 5 전 필수 검증 항목이었던 사항 해소됨
+
+## ✅ 실제 기동 테스트 완료 (2026-08-24)
+로컬 PostgreSQL + 실제 `bootRun`으로 최초 end-to-end 검증을 진행해 **4건의 실버그**를 발견·수정함 (상세는 [IMPLEMENTATION.md](../dev/IMPLEMENTATION.md) 참고):
+1. `RiskEngine.RiskCheckResult` 정적 팩토리 메서드명 충돌로 **컴파일 자체가 안 되던 버그**
+2. UUID 파라미터 타입 핸들러 누락으로 **기동 자체가 안 되던 버그**
+3. 긴급정지 이벤트가 `risk_log`에 저장되지 않던 **감사 추적 누락 버그** (Javadoc과 실제 구현 불일치)
+4. 콘솔 한글 로그 인코딩 깨짐 (운영 이슈)
+
+⚠️ **별도 발견 사항 (버그 아님, 보안 주의)**: `docs/` 디렉토리에 `67157433_appkey.txt`, `67157433_secretkey.txt` — 실제 키움 앱키/시크릿으로 추정되는 파일이 저장소 루트에 평문으로 존재함을 발견. **git에는 커밋된 적 없음을 확인**(원격 저장소에도 없음), `.gitignore`에 패턴 추가해 앞으로도 커밋되지 않도록 조치함. 다만 이 파일들이 여전히 로컬에 평문으로 남아있으므로, 사용자가 직접 안전한 곳(비밀번호 관리자 등)으로 옮기고 이 파일은 삭제할 것을 권장.
+
+## ✅ AI 모델 합성 데이터 → 실데이터 전환 (2026-08-24)
+- 시세 수집(`price_history`)·피처 계산(`feature_daily`) 배치 신규 구현 — 장마감 후(16:00 KST) 매일 자동 축적 시작
+- `train.py`가 이제 `feature_daily`+`price_history`를 조인해 **"N거래일 후 실제 등락"** 기반 정답 라벨로 학습 (실데이터 200건 이상일 때). 부족하면 기존 합성 데이터로 자동 폴백하며 `modelVersion`에 `synthetic` 명시 유지
+- ⚠️ **아직 실거래 신호로 쓸 수 없음**: 배치를 방금 연결했을 뿐이라 실데이터가 없음 — 며칠~몇 주 운영 후 데이터가 쌓여야 실데이터 학습 경로가 활성화됨 (시간이 필요한 항목이지 버그 아님)
+- 다음 단계: 데이터가 충분히 쌓이면 §4.5 백테스트 프레임워크(이미 구현됨)로 이 모델의 실제 유효성을 검증할 것
+
+### 남은 작업 (버그 아님 — 구조적 전제조건)
+- **분봉(MINUTE) TR 미검증**: 일봉만 지원, 분봉 전략은 아직 불가
+- **AI 모델 실전 사용 불가**: 현재 모델은 합성(synthetic) 라벨로 학습됨(`modelVersion=lgbm-synthetic-0.1`). 실제 시세 이력이 쌓이고 정답 라벨을 만들 수 있어야 재학습 가능 (Phase 2) — 이제 시세 조회가 실연동됐으니 `price_history`/`feature_daily` 축적 배치를 구현하면 진전 가능
+- **LIVE 모드 잔고 조회 TR 미검증**: `postMarketJob`이 LIVE 모드에서 여전히 스냅샷 저장을 스킵 중
 
 ## ✅ 추가 구현 (2026-08-24) — 실서비스 착수를 위한 사전 준비 항목
 사용자 요청에 따라 "실제 서비스 실행 전 필요 작업" 중 코드로 바로 착수 가능한 2건을 구현:

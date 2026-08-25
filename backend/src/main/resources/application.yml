@@ -1,5 +1,13 @@
 # 주식 자동매매 백엔드 설정
 # Stock auto-trading backend configuration
+
+# 실제 기동 테스트 중 발견: 콘솔 로그의 한글 주석/메시지가 깨져 나옴 (Windows 콘솔 인코딩 문제) — 명시적으로 UTF-8 지정
+# Found during a real boot test: Korean log messages were garbled on console (Windows console encoding) — force UTF-8
+logging:
+  charset:
+    console: UTF-8
+    file: UTF-8
+
 spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:autotrading}
@@ -8,6 +16,7 @@ spring:
 
 mybatis:
   mapper-locations: classpath:mapper/*.xml
+  type-handlers-package: com.jdwork.autotrading.config.mybatis
   configuration:
     map-underscore-to-camel-case: true
 

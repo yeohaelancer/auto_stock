@@ -8,6 +8,7 @@ import com.jdwork.autotrading.order.OrderService;
 import com.jdwork.autotrading.order.domain.OrderLog;
 import com.jdwork.autotrading.risk.RiskEngine;
 import com.jdwork.autotrading.risk.domain.RiskEvent;
+import com.jdwork.autotrading.risk.mapper.RiskEventMapper;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -34,17 +35,20 @@ public class TradingController {
     private final RiskEngine riskEngine;
     private final AccountService accountService;
     private final OrderService orderService;
+    private final RiskEventMapper riskEventMapper;
     private final TradingModeConfig tradingModeConfig;
     private final KiwoomApiProperties kiwoomApiProperties;
 
     public TradingController(RiskEngine riskEngine,
                               AccountService accountService,
                               OrderService orderService,
+                              RiskEventMapper riskEventMapper,
                               TradingModeConfig tradingModeConfig,
                               KiwoomApiProperties kiwoomApiProperties) {
         this.riskEngine = riskEngine;
         this.accountService = accountService;
         this.orderService = orderService;
+        this.riskEventMapper = riskEventMapper;
         this.tradingModeConfig = tradingModeConfig;
         this.kiwoomApiProperties = kiwoomApiProperties;
     }
@@ -70,7 +74,9 @@ public class TradingController {
      */
     @PostMapping("/emergency-stop")
     public RiskEvent emergencyStop() {
-        return riskEngine.triggerEmergencyStop(kiwoomApiProperties.getAccountNo(), tradingModeConfig.getMode().name());
+        RiskEvent event = riskEngine.triggerEmergencyStop(kiwoomApiProperties.getAccountNo(), tradingModeConfig.getMode().name());
+        riskEventMapper.insert(event); // 실제 기동 테스트로 발견: risk_log에 저장되지 않던 것을 수정 (found via a real boot test: this wasn't persisted to risk_log)
+        return event;
     }
 
     /**

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jdwork.autotrading.market.mapper.PriceHistoryMapper">
+
+    <insert id="upsert" parameterType="com.jdwork.autotrading.market.dto.PriceBar">
+        INSERT INTO price_history (stock_code, interval_type, trade_datetime, open_price, high_price, low_price, close_price, volume)
+        VALUES (#{stockCode}, #{intervalType}, #{tradeDateTime}, #{open}, #{high}, #{low}, #{close}, #{volume})
+        ON CONFLICT (stock_code, interval_type, trade_datetime) WHERE deleted_at IS NULL
+        DO UPDATE SET
+            open_price = EXCLUDED.open_price,
+            high_price = EXCLUDED.high_price,
+            low_price = EXCLUDED.low_price,
+            close_price = EXCLUDED.close_price,
+            volume = EXCLUDED.volume,
+            updated_at = now()
+    </insert>
+
+    <select id="findRecent" resultType="com.jdwork.autotrading.market.dto.PriceBar">
+        SELECT stock_code AS stockCode, interval_type AS intervalType, trade_datetime AS tradeDateTime,
+               open_price AS open, high_price AS high, low_price AS low, close_price AS close, volume
+        FROM price_history
+        WHERE stock_code = #{stockCode}
+          AND interval_type = #{intervalType}
+          AND deleted_at IS NULL
+        ORDER BY trade_datetime DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

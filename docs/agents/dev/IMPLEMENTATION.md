@@ -7,6 +7,56 @@
 - **기술 스택**: Spring Boot 3.3 (Java 21) + MyBatis + PostgreSQL, Python FastAPI(LightGBM 예정), Vue 3 (Composition API)
 - **작업 순서**: Phase 1 범위(키움 연동 골격, DB 매퍼 1종, 모의투자 주문, 리스크 엔진 골격, 대시보드 API, 위젯 골격)까지 구현. 실제 키움 REST API 호출/인증, 학습된 모델은 TODO로 명시 (공식 문서 확인 및 실데이터 필요)
 
+## 🆕 키움증권 OAuth 접근토큰 발급 실연동
+- `KiwoomTokenClient` 신규: `POST /oauth2/token`(grant_type=client_credentials, appkey/secretkey) 실호출, 응답의 `expires_dt`를 파싱해 만료 5분 전까지 캐시된 토큰을 재사용하고 이후 자동 재발급
+- 요청/응답 필드는 **키움 공식 개발자 포털 문서로 확인 후 구현** (2026-08-24, "접근토큰발급(au10001)" 문서) — Base URL(`api.kiwoom.com`/`mockapi.kiwoom.com`)이 기존 `application.yml` 설정과 정확히 일치함을 재확인
+- `KiwoomMarketRestClient.isConnected()`가 이제 실제 토큰 발급 성공 여부로 판단 — 더 이상 하드코딩된 `false`가 아님
+## 🆕 키움증권 일봉 시세 조회 실연동 (TR: ka10086 일별주가요청)
+- `KiwoomMarketRestClient.getRecentPriceBars()` 실구현: 사용자가 포털에서 확인해 전달한 스펙 기준
+  - `POST /api/dostk/mrkcond`, Header `authorization: Bearer {token}` + `api-id: ka10086`, Body `{stk_cd, qry_dt, indc_tp}`
+  - 응답 `daly_stkpc` 리스트를 `PriceBar`로 매핑, 날짜 기준 최신순 정렬 후 `count`만큼 반환 (API 응답 순서를 신뢰하지 않고 직접 정렬)
+  - 조회 실패/파싱 실패 시 예외를 삼키고 빈 목록 반환 — 임의 값 대체 금지 원칙 유지
+- 거래량(`trde_qty`)까지 매핑 완료(부호 없는 필드, 방어적으로 `+` 접두사만 제거 후 파싱)
+- 알려진 제한: **분봉(MINUTE) TR 미검증** — 요청 시 빈 목록 반환
+## 🆕 키움증권 실거래 주문 실연동 (TR: kt10000 매수주문 / kt10001 매도주문)
+- `LiveOrderExecutor` 실구현: `POST /api/dostk/ordr`, Header `api-id: kt10000`(매수)/`kt10001`(매도), Body `{dmst_stex_tp, stk_cd, ord_qty, ord_uv, trde_tp}` — 매수·매도 둘 다 사용자가 포털에서 확인해 전달한 스펙 기준으로 구현·검증 완료 (두 TR이 필드 구조 동일함을 확인)
+- `trde_tp="0"`(보통/지정가)로 고정 — `OrderService`가 항상 지정가를 산정하는 현재 구조와 일치
+- 응답의 `ord_no`(주문번호)만 확인하고 **체결 여부는 별도 TR(미검증)로 확인해야 하므로 임의로 FILLED 처리하지 않고 PENDING 유지**
+## 🧪 실제 기동 테스트 (2026-08-24) — 발견 및 수정한 실버그
+`./gradlew wrapper`로 Gradle Wrapper를 신규 생성하고, 로컬 PostgreSQL 16(포터블 바이너리)에 `schema.sql`을 적용한 뒤 실제로 `bootRun`, REST API 호출, DB 조회까지 end-to-end로 검증했다. 지금까지 한 번도 실제 컴파일/기동을 해본 적이 없어서 아래 4건이 숨어 있었다 — 전부 이번에 발견·수정 완료:
+
+1. **컴파일 에러**: `RiskEngine.RiskCheckResult`의 정적 팩토리 메서드 `approved()`가 레코드 컴포넌트 접근자 `approved()`와 이름이 겹쳐 컴파일 자체가 안 됨 → `approve()`로 개명
+2. **런타임 에러(MyBatis)**: `java.util.UUID` 파라미터(`order_id`, `signal_id`)에 대한 타입 핸들러가 없어 `OrderLogMapper.xml` 파싱이 기동 시점에 실패 → `UuidTypeHandler` 신규 작성 + `mybatis.type-handlers-package` 등록
+3. **로직 버그**: `TradingController.emergencyStop()`이 Javadoc에는 "risk_log 기록"이라고 적혀 있었지만 실제로는 `RiskEventMapper.insert()`를 호출하지 않아 긴급정지 이벤트가 DB에 전혀 남지 않고 있었음 → 수정 후 실제 DB 조회로 `risk_log`에 저장됨을 확인
+4. **운영 이슈**: 콘솔 로그의 한글 메시지가 Windows 콘솔 인코딩 문제로 깨져 표시됨 → `application.yml`에 `logging.charset.console/file: UTF-8` 명시
+
+검증한 것: `GET /api/trading/status`, `GET /api/trading/positions`, `GET /api/backtest/performance`, `POST /api/trading/emergency-stop`(+ DB 반영 확인), `POST /api/trading/signals/{stockCode}/process`(ml-service 미기동 시 정상적으로 신호 스킵 확인) — 모두 기대대로 동작.
+
+## 🆕 AI 모델 합성 데이터 → 실데이터 전환
+- `PriceHistoryMapper`(+XML) 신규: `price_history` upsert(`uq_price_history` 유니크 인덱스 기반), 최근 N개 봉 조회
+- `FeatureDaily` 도메인 + `FeatureDailyMapper`(+XML) 신규: `feature_daily` upsert
+- `FeatureEngineeringService` 신규: 표준 공식으로 지표 계산 — SMA(MA5/MA20), RSI14(단순평균 방식), MACD(EMA12−EMA26), 볼린저밴드(MA20±2σ). 각 지표는 필요한 최소 데이터가 부족하면 임의 값 대신 null로 남김(모두 nullable 컬럼)
+- `TradingScheduler.collectPriceHistoryAndFeatures()` 신규: 16:00 KST(장마감 정산 이후) 종목 유니버스 전체를 순회하며 키움 TR(ka10086)로 최근 60일치 시세를 한 번에 받아 `price_history`에 저장 → 지표 계산 → `feature_daily` 저장. 종목별 예외 격리(기존 스케줄러 원칙과 동일)
+- `ml-service/train.py` 전면 개편: `feature_daily`를 `price_history`와 조인해 **"N거래일 후 실제 등락"** 기반 정답 라벨을 산출하는 실데이터 학습 파이프라인으로 전환
+  - 실데이터가 최소 200건 이상이면 실데이터로 학습, `modelVersion=lgbm-real-h5d-n{건수}`로 태깅
+  - 실데이터 부족(운영 초기 등) 시 기존 합성 데이터로 자동 폴백, `modelVersion=lgbm-synthetic-0.1` 유지 — 실거래 신호 오인 방지 원칙 계속 적용
+- 알려진 제한: 방금 배치를 연결했을 뿐이라 아직 실데이터가 쌓이지 않은 상태 — 며칠~몇 주 운영해 데이터가 축적된 후에야 `train.py`가 실데이터 경로를 타게 됨 (버그 아님, 시간이 필요한 항목)
+
+## 🆕 키움증권 LIVE 계좌 잔고/보유종목 실연동 (TR: kt00001 예수금상세현황 + kt00018 계좌평가잔고내역)
+- `KiwoomCashBalanceClient` 신규: `POST /api/dostk/acnt`, `api-id: kt00001` — 응답의 `entr`(예수금) 필드를 실제 현금 잔고로 그대로 사용
+- `KiwoomBalanceClient` (kt00018): 보유종목 리스트·평가액(`tot_evlt_amt`) 조회로 역할 축소 — 처음 시도했던 "추정예탁자산 − 총평가금액" 역산 추론은 kt00001의 명시적 `entr` 필드 확인 후 완전히 폐기
+- `TradingScheduler.settleLiveSnapshot()`: 두 TR을 조합해 `totalValue = 예수금 + 보유종목평가액`으로 저장, 둘 중 하나라도 실패하면 스냅샷 자체를 저장하지 않음(부분값 저장 금지, 설계 §10)
+- `PositionMapper.upsertFromBalance()`: 실계좌 보유종목으로 `position` 테이블 동기화 (청산된 종목은 quantity=0으로 반영되어 기존 조회 필터가 자연스럽게 숨김)
+- ✅ 이전 세션에서 남겼던 "LIVE 현금 잔고는 추론값" 경고는 이제 **해소됨** — 명시적 `entr` 필드로 대체
+
+## 🆕 키움증권 체결 확인 실연동 (TR: ka10076 체결요청)
+- `KiwoomFillInquiryClient` 신규: `POST /api/dostk/acnt`, `api-id: ka10076`, 종목코드로 최근 체결 목록을 받아 `kiwoomOrderNo`와 일치하는 항목을 찾아 상태(`ord_stt`: 접수/확인/체결) 판정
+  - ⚠️ 요청의 `ord_no`는 특정 주문 필터가 아니라 "이 번호보다 과거" 페이징 커서임을 문서로 확인 — 그래서 목록을 받아온 뒤 클라이언트 측에서 주문번호로 매칭하는 방식으로 구현
+- `TradingScheduler.checkPendingFills()` 신규: LIVE 모드에서 1분 간격으로 PENDING/PARTIAL 주문을 순회하며 체결 확인 → 체결 시 `execution_status=FILLED`(또는 부분체결 시 `PARTIAL`) + `executed_price` 갱신
+- `OrderLogMapper.findUnresolvedLiveOrders`/`updateFillStatus` 신규
+- 종목별 예외를 격리해(try/catch) 한 주문의 조회 실패가 나머지 주문 확인을 막지 않도록 함 (기존 스케줄러 원칙과 동일하게 적용)
+- 알려진 제한: MOCK 모드는 이 배치를 타지 않음(즉시체결 시뮬레이션이라 불필요) — LIVE 전환 후에만 의미 있음, LIVE 자체는 여전히 미승인 상태(Phase 5 이전)
+
 ## 🆕 종목 유니버스 갱신 배치 (preMarketJob 실구현)
 - `StockMasterMapper.markStaleAsHalted`/`markActiveAsResumed` 신규: 설정된 기준일(`trading.universe.stale-trading-days`, 기본 5일) 동안 `price_history`에 시세가 없는 종목을 거래정지 후보로 표시, 다시 시세가 관측되면 자동 해제
 - ⚠️ 명확한 한계: 이는 "최근 시세 부재"라는 대리 신호(휴리스틱)이지 키움/KRX의 실제 거래정지 통지가 아님. `is_managed`(관리종목 지정)는 자체 데이터로 판단 불가능한 외부 지정 정보라 **이 배치에서 다루지 않음** — KRX/공시 API 연동 필요(TODO로 명시)
@@ -93,7 +143,7 @@ cd backend && ./gradlew bootRun
 
 # AI 예측 서비스 (최초 1회 학습 필요 — 없으면 placeholder 응답만 반환)
 cd ml-service && pip install -r requirements.txt
-python train.py                       # model.pkl 생성 (합성 데이터 기반)
+python train.py                       # model.pkl 생성 (실데이터 200건 이상이면 실데이터, 아니면 합성 데이터로 자동 폴백)
 uvicorn main:app --reload --port 8001
 ```
 

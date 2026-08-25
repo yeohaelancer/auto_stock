@@ -51,5 +51,8 @@
 ## 📌 변경 이력 (2026-08-24, BUG-006/BUG-003 일괄 수정 단계)
 BUG-006(계좌 스냅샷 저장), BUG-003(AI 예측 실연동)은 모두 **기존 스키마(account_snapshot, feature_daily)를 그대로 사용**하며 DDL 변경이 필요 없음을 확인했습니다. `account_snapshot`의 `UNIQUE(account_id, trading_mode, snapshot_date)` 제약은 이미 upsert(ON CONFLICT) 처리를 뒷받침하도록 설계되어 있어 Dev가 그대로 활용합니다.
 
+## 📌 변경 이력 (2026-08-24, AI 모델 실데이터 학습 전환 단계)
+시세 수집 배치(`price_history` upsert)를 위해 `stock_code + interval_type + trade_datetime` 조합에 **유니크 인덱스(`uq_price_history`)를 추가**했다 — 매일 배치가 재실행돼도 중복 행이 쌓이지 않고 `ON CONFLICT`로 갱신되도록 함. `feature_daily`는 기존 `uq_feature_daily` 인덱스를 그대로 upsert 대상으로 재사용해 스키마 변경 없음.
+
 ## 📌 변경 이력 (2026-08-24, BUG-005 스케줄러 자동 연동 단계)
 장중 스케줄러가 종목 유니버스(`stock_master`)와 최근 계좌 스냅샷(`account_snapshot`)을 조회해야 하므로, 두 테이블에 대한 **신규 조회 전용 매퍼**가 필요합니다. 두 테이블 모두 기존 DDL에 이미 존재하므로 **스키마 변경은 없음**. `stock_master.is_managed`/`is_trading_halt`/`deleted_at`, `account_snapshot`의 `(account_id, trading_mode, snapshot_date DESC)` 조합을 그대로 활용합니다.

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jdwork.autotrading.market.mapper.FeatureDailyMapper">
+
+    <insert id="upsert" parameterType="com.jdwork.autotrading.market.domain.FeatureDaily">
+        INSERT INTO feature_daily (stock_code, base_date, ma5, ma20, rsi14, macd, bollinger_upper, bollinger_lower, feature_version)
+        VALUES (#{stockCode}, #{baseDate}, #{ma5}, #{ma20}, #{rsi14}, #{macd}, #{bollingerUpper}, #{bollingerLower}, #{featureVersion})
+        ON CONFLICT (stock_code, base_date, feature_version)
+        DO UPDATE SET
+            ma5 = EXCLUDED.ma5,
+            ma20 = EXCLUDED.ma20,
+            rsi14 = EXCLUDED.rsi14,
+            macd = EXCLUDED.macd,
+            bollinger_upper = EXCLUDED.bollinger_upper,
+            bollinger_lower = EXCLUDED.bollinger_lower,
+            updated_at = now()
+    </insert>
+
+</mapper>

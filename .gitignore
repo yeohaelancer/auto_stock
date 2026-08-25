@@ -2,11 +2,16 @@
 .env
 .env.*
 !.env.example
+# 키움 앱키/시크릿 파일 (실제 기동 테스트 중 저장소 루트에서 발견 — 절대 커밋 금지)
+# Kiwoom app key/secret files (found in the repo during a real boot test — never commit)
+docs/*_appkey.txt
+docs/*_secretkey.txt
 
 # Gradle / Java
 backend/.gradle/
 backend/build/
 backend/out/
+backend/*.log
 *.class
 !backend/gradlew
 !backend/gradlew.bat

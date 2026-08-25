@@ -37,4 +37,18 @@ public interface OrderLogMapper {
      * Fetch all FILLED orders ordered by stock/time — used to FIFO-match round-trip trades for backtesting.
      */
     List<OrderLog> findFilledByMode(@Param("tradingMode") String tradingMode);
+
+    /**
+     * 키움 주문번호가 있으면서 아직 PENDING/PARTIAL 상태인 주문을 조회한다 — 체결 확인 배치 대상 (BUG: 체결확인 미구현 수정).
+     * Fetch orders that have a Kiwoom order number but are still PENDING/PARTIAL — targets for the fill-check batch.
+     */
+    List<OrderLog> findUnresolvedLiveOrders(@Param("tradingMode") String tradingMode);
+
+    /**
+     * 체결 확인 결과로 체결상태/체결가를 갱신한다.
+     * Updates execution status/executed price based on a fill-check result.
+     */
+    void updateFillStatus(@Param("orderId") java.util.UUID orderId,
+                           @Param("executionStatus") String executionStatus,
+                           @Param("executedPrice") BigDecimal executedPrice);
 }

@@ -51,6 +51,9 @@ CREATE TABLE price_history (
 ) PARTITION BY RANGE (trade_datetime);
 
 CREATE INDEX idx_price_history_lookup ON price_history (stock_code, interval_type, trade_datetime DESC);
+-- 동일 종목·봉종류·시각 중복 저장 방지 + ON CONFLICT upsert 지원 (시세 수집 배치용)
+-- Prevents duplicate stock/interval/timestamp rows + supports ON CONFLICT upsert (for the price-collection batch)
+CREATE UNIQUE INDEX uq_price_history ON price_history (stock_code, interval_type, trade_datetime) WHERE deleted_at IS NULL;
 
 -- -------------------------------------------------------------------------
 -- 3. feature_daily : AI 모델 입력 피처 (기술적 지표) — 월 단위 파티셔닝

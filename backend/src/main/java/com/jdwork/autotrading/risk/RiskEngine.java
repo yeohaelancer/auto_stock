@@ -61,7 +61,7 @@ public class RiskEngine {
         // 종목당 포지션 한도/최소 현금 비율은 정확한 수량·가격이 필요하므로 주문 생성 직전 validateOrder()에서 검증한다.
         // Per-stock position limit / min cash ratio need an exact quantity & price, so they're checked in
         // validateOrder() right before order creation instead of here.
-        return RiskCheckResult.approved();
+        return RiskCheckResult.approve();
     }
 
     /**
@@ -77,7 +77,7 @@ public class RiskEngine {
             return RiskCheckResult.rejected("긴급정지 상태 — 모든 신규 주문 차단 (emergency stop active — all new orders blocked)");
         }
         if (order.getOrderType() != OrderLog.OrderType.BUY) {
-            return RiskCheckResult.approved();
+            return RiskCheckResult.approve();
         }
         if (context.totalAccountValue().signum() <= 0) {
             // 계좌 평가금액을 알 수 없으면 비율 계산이 무의미하므로 안전하게 차단한다.
@@ -99,7 +99,7 @@ public class RiskEngine {
             return RiskCheckResult.rejected("최소 현금 보유 비율 미달 (minimum cash ratio violated)");
         }
 
-        return RiskCheckResult.approved();
+        return RiskCheckResult.approve();
     }
 
     /** 대시보드 긴급정지 버튼에서 호출 — 즉시 모든 신규 주문을 차단한다 (called from the dashboard emergency-stop button). */
@@ -114,7 +114,9 @@ public class RiskEngine {
     }
 
     public record RiskCheckResult(boolean approved, String rejectReason) {
-        static RiskCheckResult approved() { return new RiskCheckResult(true, null); }
+        // 정적 팩토리 메서드명은 레코드 컴포넌트 접근자(approved())와 겹치면 컴파일 에러가 나므로 approve()로 명명
+        // Named approve() (not approved()) — colliding with the record component accessor approved() fails to compile
+        static RiskCheckResult approve() { return new RiskCheckResult(true, null); }
         static RiskCheckResult rejected(String reason) { return new RiskCheckResult(false, reason); }
     }
 }

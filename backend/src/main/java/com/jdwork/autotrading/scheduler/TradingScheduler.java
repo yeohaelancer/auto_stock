@@ -1,10 +1,19 @@
 package com.jdwork.autotrading.scheduler;
 
 import com.jdwork.autotrading.account.AccountService;
+import com.jdwork.autotrading.account.KiwoomBalanceClient;
+import com.jdwork.autotrading.account.KiwoomCashBalanceClient;
 import com.jdwork.autotrading.account.domain.AccountSnapshot;
+import com.jdwork.autotrading.account.domain.Position;
 import com.jdwork.autotrading.account.mapper.AccountSnapshotMapper;
+import com.jdwork.autotrading.account.mapper.PositionMapper;
 import com.jdwork.autotrading.config.KiwoomApiProperties;
 import com.jdwork.autotrading.config.TradingModeConfig;
+import com.jdwork.autotrading.market.FeatureEngineeringService;
+import com.jdwork.autotrading.market.KiwoomMarketClient;
+import com.jdwork.autotrading.market.dto.PriceBar;
+import com.jdwork.autotrading.market.mapper.PriceHistoryMapper;
+import com.jdwork.autotrading.order.KiwoomFillInquiryClient;
 import com.jdwork.autotrading.order.OrderService;
 import com.jdwork.autotrading.order.domain.OrderLog;
 import com.jdwork.autotrading.order.mapper.OrderLogMapper;
@@ -20,6 +29,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 장전/장중/장마감/야간 배치 스케줄러 (설계 §8.1).
@@ -35,6 +45,13 @@ public class TradingScheduler {
     private final AccountSnapshotMapper accountSnapshotMapper;
     private final OrderLogMapper orderLogMapper;
     private final AccountService accountService;
+    private final KiwoomFillInquiryClient fillInquiryClient;
+    private final KiwoomBalanceClient balanceClient;
+    private final KiwoomCashBalanceClient cashBalanceClient;
+    private final PositionMapper positionMapper;
+    private final KiwoomMarketClient marketClient;
+    private final PriceHistoryMapper priceHistoryMapper;
+    private final FeatureEngineeringService featureEngineeringService;
     private final TradingModeConfig tradingModeConfig;
     private final KiwoomApiProperties kiwoomApiProperties;
     private final BigDecimal mockInitialCapital;
@@ -45,6 +62,13 @@ public class TradingScheduler {
                              AccountSnapshotMapper accountSnapshotMapper,
                              OrderLogMapper orderLogMapper,
                              AccountService accountService,
+                             KiwoomFillInquiryClient fillInquiryClient,
+                             KiwoomBalanceClient balanceClient,
+                             KiwoomCashBalanceClient cashBalanceClient,
+                             PositionMapper positionMapper,
+                             KiwoomMarketClient marketClient,
+                             PriceHistoryMapper priceHistoryMapper,
+                             FeatureEngineeringService featureEngineeringService,
                              TradingModeConfig tradingModeConfig,
                              KiwoomApiProperties kiwoomApiProperties,
                              @Value("${trading.mock.initial-capital}") BigDecimal mockInitialCapital,
@@ -54,6 +78,13 @@ public class TradingScheduler {
         this.accountSnapshotMapper = accountSnapshotMapper;
         this.orderLogMapper = orderLogMapper;
         this.accountService = accountService;
+        this.fillInquiryClient = fillInquiryClient;
+        this.balanceClient = balanceClient;
+        this.cashBalanceClient = cashBalanceClient;
+        this.positionMapper = positionMapper;
+        this.marketClient = marketClient;
+        this.priceHistoryMapper = priceHistoryMapper;
+        this.featureEngineeringService = featureEngineeringService;
         this.tradingModeConfig = tradingModeConfig;
         this.kiwoomApiProperties = kiwoomApiProperties;
         this.mockInitialCapital = mockInitialCapital;
@@ -123,27 +154,122 @@ public class TradingScheduler {
     }
 
     /**
-     * 장 마감 후: 당일 체결 정산, 계좌 스냅샷 저장 (BUG-006 수정). 15:40 KST.
-     * Post-market: settle the day's fills and save an account snapshot (BUG-006 fix). 15:40 KST.
+     * 장중: LIVE 모드의 미체결(PENDING/PARTIAL) 주문을 체결요청(ka10076) TR로 확인해 상태를 갱신한다.
+     * Intraday: checks LIVE-mode unresolved (PENDING/PARTIAL) orders via the fill-inquiry TR (ka10076)
+     * and updates their status.
+     *
+     * `LiveOrderExecutor`는 주문 접수만 확인하고 항상 PENDING으로 남기므로, 이 배치가 실제 체결 여부를
+     * 확정하는 유일한 경로다. 09:01~15:29 KST 사이 1분 간격 — intradaySignalScan보다 촘촘하게 돈다
+     * (체결은 신호 스캔 주기보다 빠르게 일어날 수 있으므로).
+     * `LiveOrderExecutor` only confirms order acceptance and always leaves PENDING, so this batch is
+     * the only path that actually confirms a fill. Runs every minute between 09:01–15:29 KST — tighter
+     * than intradaySignalScan since fills can happen faster than the signal-scan cadence.
+     */
+    @Scheduled(cron = "0 * 9-15 * * MON-FRI", zone = "Asia/Seoul")
+    public void checkPendingFills() {
+        if (!tradingModeConfig.isLive()) {
+            return; // MOCK 모드는 즉시 체결 시뮬레이션이라 확인할 미체결 주문이 없음 (no unresolved orders to check in MOCK mode)
+        }
+
+        String tradingMode = tradingModeConfig.getMode().name();
+        List<OrderLog> unresolved = orderLogMapper.findUnresolvedLiveOrders(tradingMode);
+        if (unresolved.isEmpty()) {
+            return;
+        }
+
+        log.info("미체결 주문 {}건 체결 확인 시작 (checking fill status for {} unresolved orders)",
+                unresolved.size(), unresolved.size());
+
+        for (OrderLog order : unresolved) {
+            try {
+                fillInquiryClient.checkFillStatus(order.getStockCode(), order.getKiwoomOrderNo())
+                        .ifPresent(fillStatus -> {
+                            if (fillStatus.fullyFilled()) {
+                                orderLogMapper.updateFillStatus(order.getOrderId(),
+                                        OrderLog.ExecutionStatus.FILLED.name(), fillStatus.filledPrice());
+                                log.info("주문 체결 확인: {} (order confirmed filled: {})",
+                                        order.getOrderId(), order.getOrderId());
+                            } else if (fillStatus.partiallyFilled()) {
+                                orderLogMapper.updateFillStatus(order.getOrderId(),
+                                        OrderLog.ExecutionStatus.PARTIAL.name(), fillStatus.filledPrice());
+                            }
+                            // 미체결(접수/확인) 상태면 갱신하지 않고 다음 사이클에 재확인 (still unfilled — leave as-is, recheck next cycle)
+                        });
+            } catch (Exception e) {
+                // 한 주문의 조회 실패가 나머지 주문 확인을 막지 않도록 격리 (같은 원칙, TradingScheduler 전반에 적용)
+                // Isolate failures so one order's lookup error never blocks checking the rest (same principle used throughout this class)
+                log.error("주문 {} 체결 확인 실패 — 다음 주문으로 계속 진행 (fill-check failed for order {}, continuing)",
+                        order.getOrderId(), order.getOrderId(), e);
+            }
+        }
+    }
+
+    /**
+     * 장 마감 후: 당일 체결 정산, 계좌 스냅샷 저장 (BUG-006 수정, LIVE 모드는 kt00018 연동으로 확장). 15:40 KST.
+     * Post-market: settle the day's fills and save an account snapshot (BUG-006 fix; LIVE mode now
+     * wired via TR kt00018). 15:40 KST.
      *
      * 이 배치가 저장한 스냅샷이 다음 거래일 intradaySignalScan()의 입력이 된다.
      * The snapshot saved here becomes the input for the next trading day's intradaySignalScan().
-     *
-     * MOCK 모드에서만 계산·저장한다 — LIVE 모드는 실제 계좌 잔고 조회 API 연동 전까지 절대 값을
-     * 지어내지 않는다 (Review 필수 반영사항, 설계 §10).
-     * Only computed/saved in MOCK mode — LIVE mode never fabricates a value until the real
-     * account balance API is wired (Review's must-fix finding, design doc §10).
      */
     @Scheduled(cron = "0 40 15 * * MON-FRI", zone = "Asia/Seoul")
     public void postMarketJob() {
+        if (tradingModeConfig.isLive()) {
+            settleLiveSnapshot();
+        } else {
+            settleMockSnapshot();
+        }
+    }
+
+    /**
+     * LIVE 모드: 예수금(kt00001) + 계좌평가잔고내역(kt00018)을 조합해 실제 잔고/보유종목을 조회·저장한다.
+     * LIVE mode: combines cash balance (kt00001) + account holdings valuation (kt00018) to fetch and
+     * save the real balance/positions.
+     *
+     * 두 TR 중 하나라도 조회에 실패하면 절대 부분적인/추정된 값으로 스냅샷을 저장하지 않는다 (설계 §10).
+     * If either TR lookup fails, this never saves a snapshot with a partial/estimated value (design doc §10).
+     */
+    private void settleLiveSnapshot() {
         String accountId = kiwoomApiProperties.getAccountNo();
         String tradingMode = tradingModeConfig.getMode().name();
 
-        if (tradingModeConfig.isLive()) {
-            log.warn("실거래 계좌 잔고 조회 API 미연동 — LIVE 모드 계좌 스냅샷 저장을 스킵합니다 "
-                    + "(live account balance API not wired yet — skipping LIVE snapshot save)");
+        Optional<BigDecimal> cashBalanceOpt = cashBalanceClient.fetchCashBalance();
+        Optional<KiwoomBalanceClient.AccountBalance> balanceOpt = balanceClient.fetchAccountBalance();
+
+        if (cashBalanceOpt.isEmpty() || balanceOpt.isEmpty()) {
+            log.error("[LIVE] 계좌 잔고 조회 실패 — 이번 장마감 스냅샷 저장을 스킵합니다 "
+                    + "([LIVE] account balance lookup failed — skipping this post-market snapshot save)");
             return;
         }
+
+        BigDecimal cashBalance = cashBalanceOpt.get();
+        KiwoomBalanceClient.AccountBalance balance = balanceOpt.get();
+        BigDecimal totalValue = cashBalance.add(balance.positionsValue());
+
+        for (KiwoomBalanceClient.PositionSnapshot holding : balance.positions()) {
+            Position position = new Position();
+            position.setAccountId(accountId);
+            position.setTradingMode(tradingMode);
+            position.setStockCode(holding.stockCode());
+            position.setQuantity(holding.quantity());
+            position.setAvgPrice(holding.avgPrice());
+            positionMapper.upsertFromBalance(position);
+        }
+
+        saveSnapshot(accountId, tradingMode, totalValue, cashBalance);
+        log.info("[LIVE] 장마감 정산 배치 완료: totalValue={}, cashBalance={}, 보유종목 {}건 "
+                        + "([LIVE] post-market settlement complete: totalValue={}, cashBalance={}, {} holdings)",
+                totalValue, cashBalance, balance.positions().size(),
+                totalValue, cashBalance, balance.positions().size());
+    }
+
+    /**
+     * MOCK 모드: "초기 시드머니 − 누적매수 + 누적매도"로 현금 잔고를 정확히 역산한다 (BUG-006).
+     * MOCK mode: derives cash balance exactly as "initial seed capital − cumulative buys + cumulative sells" (BUG-006).
+     */
+    private void settleMockSnapshot() {
+        String accountId = kiwoomApiProperties.getAccountNo();
+        String tradingMode = tradingModeConfig.getMode().name();
 
         BigDecimal cumulativeBuys = orderLogMapper.sumFilledValue(tradingMode, OrderLog.OrderType.BUY.name());
         BigDecimal cumulativeSells = orderLogMapper.sumFilledValue(tradingMode, OrderLog.OrderType.SELL.name());
@@ -151,6 +277,13 @@ public class TradingScheduler {
         BigDecimal positionsValue = accountService.getPositionsValue(accountId, tradingMode);
         BigDecimal totalValue = cashBalance.add(positionsValue);
 
+        saveSnapshot(accountId, tradingMode, totalValue, cashBalance);
+        log.info("[MOCK] 장마감 정산 배치 완료: totalValue={}, cashBalance={} "
+                        + "([MOCK] post-market settlement complete: totalValue={}, cashBalance={})",
+                totalValue, cashBalance, totalValue, cashBalance);
+    }
+
+    private void saveSnapshot(String accountId, String tradingMode, BigDecimal totalValue, BigDecimal cashBalance) {
         AccountSnapshot previous = accountSnapshotMapper.findLatest(accountId, tradingMode);
         BigDecimal dailyPnl = previous == null ? BigDecimal.ZERO : totalValue.subtract(previous.getTotalValue());
         BigDecimal dailyPnlRate = (previous == null || previous.getTotalValue().signum() <= 0)
@@ -166,10 +299,47 @@ public class TradingScheduler {
         snapshot.setDailyPnl(dailyPnl);
         snapshot.setDailyPnlRate(dailyPnlRate);
         accountSnapshotMapper.upsert(snapshot);
+    }
 
-        log.info("장마감 정산 배치 완료: totalValue={}, cashBalance={}, dailyPnlRate={} "
-                        + "(post-market settlement complete: totalValue={}, cashBalance={}, dailyPnlRate={})",
-                totalValue, cashBalance, dailyPnlRate, totalValue, cashBalance, dailyPnlRate);
+    /**
+     * 장마감 후: 종목 유니버스 전체의 일봉 시세를 수집해 price_history에 저장하고, 기술적 지표를
+     * 계산해 feature_daily에 저장한다 (AI 모델 실데이터 학습의 첫 단계). 16:00 KST.
+     * Post-market: collects daily price bars for the whole universe into price_history and computes
+     * technical indicators into feature_daily (the first step toward training the AI model on real
+     * data). 16:00 KST.
+     *
+     * postMarketJob(15:40) 이후에 실행해 당일 체결이 반영된 종가를 사용한다.
+     * Runs after postMarketJob (15:40) so the day's close reflects the day's actual trading.
+     */
+    @Scheduled(cron = "0 0 16 * * MON-FRI", zone = "Asia/Seoul")
+    public void collectPriceHistoryAndFeatures() {
+        List<String> universe = stockMasterMapper.findActiveUniverse();
+        log.info("시세/피처 수집 배치 시작: {}종목 (price/feature collection starting for {} stocks)",
+                universe.size(), universe.size());
+
+        int collected = 0;
+        for (String stockCode : universe) {
+            try {
+                // 키움 TR(ka10086)이 과거 여러 날짜를 한 번에 돌려주므로, 매일 1건씩이 아니라 60일치를
+                // 받아 한꺼번에 채운다 — 지표(MA20/RSI14/MACD 등) 계산에 필요한 과거 데이터를 빠르게 축적하기 위함.
+                // Kiwoom's TR (ka10086) returns many past days at once, so we pull 60 days per run instead
+                // of just 1 — this backfills the history needed for indicators (MA20/RSI14/MACD, etc.) quickly.
+                List<PriceBar> bars = marketClient.getRecentPriceBars(stockCode, "DAILY", 60);
+                if (bars.isEmpty()) {
+                    continue; // 시세 미확보 — 이 종목만 스킵 (no price available — skip just this stock)
+                }
+                bars.forEach(priceHistoryMapper::upsert);
+                featureEngineeringService.computeAndSave(stockCode);
+                collected++;
+            } catch (Exception e) {
+                // 한 종목의 실패가 나머지 종목 수집을 막지 않도록 격리 (TradingScheduler 전반의 원칙과 동일)
+                // Isolate failures so one stock's error never blocks collecting the rest (same principle used throughout this class)
+                log.error("{} 종목 시세/피처 수집 실패 — 다음 종목으로 계속 진행 ({} price/feature collection failed, continuing)",
+                        stockCode, stockCode, e);
+            }
+        }
+        log.info("시세/피처 수집 배치 완료: {}/{}종목 (price/feature collection complete: {}/{} stocks)",
+                collected, universe.size(), collected, universe.size());
     }
 
     /** 야간: 모델 재학습 배치. 02:00 KST. */

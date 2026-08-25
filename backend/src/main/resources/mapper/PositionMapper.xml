@@ -15,4 +15,14 @@
         ORDER BY stock_code
     </select>
 
+    <insert id="upsertFromBalance" parameterType="com.jdwork.autotrading.account.domain.Position">
+        INSERT INTO position (account_id, trading_mode, stock_code, quantity, avg_price)
+        VALUES (#{accountId}, #{tradingMode}, #{stockCode}, #{quantity}, #{avgPrice})
+        ON CONFLICT (account_id, trading_mode, stock_code) WHERE deleted_at IS NULL
+        DO UPDATE SET
+            quantity = EXCLUDED.quantity,
+            avg_price = EXCLUDED.avg_price,
+            updated_at = now()
+    </insert>
+
 </mapper>
