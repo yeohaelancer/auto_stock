@@ -19,6 +19,11 @@ CREATE TABLE stock_master (
     listed_date     DATE,                                    -- 상장일 (Listing date)
     is_managed      BOOLEAN       NOT NULL DEFAULT FALSE,     -- 관리종목 여부 (Is under management/watch)
     is_trading_halt BOOLEAN       NOT NULL DEFAULT FALSE,     -- 거래정지 여부 (Is trading halted)
+    -- 거래대금 상위 자동선정 배치가 채운 행인지 구분 — 사용자가 수동으로 추가한 종목까지 자동 배치가
+    -- 실수로 비활성화(soft delete)하지 않도록 하기 위함 (UniverseSelectionService).
+    -- Distinguishes rows populated by the auto-selection batch, so it never soft-deletes stocks a
+    -- human added manually (UniverseSelectionService).
+    is_auto_selected BOOLEAN      NOT NULL DEFAULT FALSE,
     created_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
     deleted_at      TIMESTAMPTZ,                              -- soft delete

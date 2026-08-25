@@ -45,6 +45,8 @@ trading:
   universe:
     # 이 기간(영업일 근사치, 달력일 기준) 동안 시세가 없으면 거래정지 후보로 표시 (preMarketJob 휴리스틱)
     stale-trading-days: ${UNIVERSE_STALE_TRADING_DAYS:5}
+    # 자동 유니버스 크기 — 코스피+코스닥 거래대금 상위를 합쳐 이 개수만큼 자동 선정 (사용자 요청, 확정값 20)
+    auto-select-size: ${UNIVERSE_AUTO_SELECT_SIZE:20}
   backtest:
     # 매수+매도 양방향 거래대금 기준 비용률 — 수수료+세금 등을 뭉뚱그린 근사치, 운영 시 조정 필요
     commission-rate: ${BACKTEST_COMMISSION_RATE:0.00015}

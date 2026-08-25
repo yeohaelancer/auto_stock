@@ -32,4 +32,22 @@ public interface StockMasterMapper {
 
     /** 위 마킹 이후 다시 시세가 관측된 종목의 거래정지 표시를 해제한다 (자동 복구). Un-flags stocks once fresh price data reappears (auto-recovery). */
     int markActiveAsResumed(@Param("cutoff") OffsetDateTime cutoff);
+
+    /**
+     * 거래대금 상위 자동선정 종목을 upsert한다 — is_auto_selected=TRUE로 표시하고, 이전에 소프트 삭제됐다면
+     * 복구한다(deleted_at=NULL). 사용자 요청(종목을 시스템이 스스로 선정)으로 신규 작성.
+     * Upserts an auto-selected (top trading value) stock — marks is_auto_selected=TRUE and restores it
+     * if previously soft-deleted (deleted_at=NULL). Added per user request (system selects stocks itself).
+     */
+    void upsertAutoSelected(@Param("stockCode") String stockCode,
+                             @Param("stockName") String stockName,
+                             @Param("marketType") String marketType);
+
+    /**
+     * 이번 자동선정 목록에 포함되지 않은 기존 자동선정 종목을 소프트 삭제한다 — 순위에서 밀려난 종목을
+     * 유니버스에서 자연스럽게 제외한다. is_auto_selected=FALSE(수동 추가)인 종목은 절대 건드리지 않는다.
+     * Soft-deletes previously auto-selected stocks that fell out of this run's top-N — naturally
+     * excludes them from the universe. Never touches manually-added (is_auto_selected=FALSE) stocks.
+     */
+    int deactivateAutoSelectedNotIn(@Param("stockCodes") List<String> stockCodes);
 }

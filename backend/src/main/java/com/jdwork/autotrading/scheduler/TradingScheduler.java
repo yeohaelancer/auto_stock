@@ -11,6 +11,7 @@ import com.jdwork.autotrading.config.KiwoomApiProperties;
 import com.jdwork.autotrading.config.TradingModeConfig;
 import com.jdwork.autotrading.market.FeatureEngineeringService;
 import com.jdwork.autotrading.market.KiwoomMarketClient;
+import com.jdwork.autotrading.market.UniverseSelectionService;
 import com.jdwork.autotrading.market.dto.PriceBar;
 import com.jdwork.autotrading.market.mapper.PriceHistoryMapper;
 import com.jdwork.autotrading.order.KiwoomFillInquiryClient;
@@ -52,6 +53,7 @@ public class TradingScheduler {
     private final KiwoomMarketClient marketClient;
     private final PriceHistoryMapper priceHistoryMapper;
     private final FeatureEngineeringService featureEngineeringService;
+    private final UniverseSelectionService universeSelectionService;
     private final TradingModeConfig tradingModeConfig;
     private final KiwoomApiProperties kiwoomApiProperties;
     private final BigDecimal mockInitialCapital;
@@ -69,6 +71,7 @@ public class TradingScheduler {
                              KiwoomMarketClient marketClient,
                              PriceHistoryMapper priceHistoryMapper,
                              FeatureEngineeringService featureEngineeringService,
+                             UniverseSelectionService universeSelectionService,
                              TradingModeConfig tradingModeConfig,
                              KiwoomApiProperties kiwoomApiProperties,
                              @Value("${trading.mock.initial-capital}") BigDecimal mockInitialCapital,
@@ -85,6 +88,7 @@ public class TradingScheduler {
         this.marketClient = marketClient;
         this.priceHistoryMapper = priceHistoryMapper;
         this.featureEngineeringService = featureEngineeringService;
+        this.universeSelectionService = universeSelectionService;
         this.tradingModeConfig = tradingModeConfig;
         this.kiwoomApiProperties = kiwoomApiProperties;
         this.mockInitialCapital = mockInitialCapital;
@@ -92,19 +96,26 @@ public class TradingScheduler {
     }
 
     /**
-     * 장 시작 전: 종목 유니버스 갱신(거래정지 후보 마킹), AI 예측 배치 실행. 08:00 KST.
-     * Pre-market: refresh the stock universe (flag suspected halts), run the prediction batch. 08:00 KST.
+     * 장 시작 전: 매매 유니버스 자동선정, 거래정지 후보 마킹. 08:00 KST.
+     * Pre-market: auto-select the trading universe, flag suspected halts. 08:00 KST.
+     *
+     * 유니버스 자동선정(사용자 요청): 코스피+코스닥 거래대금 상위를 조회해 stock_master를 자동으로 채운다.
+     * 더 이상 사람이 종목을 직접 등록할 필요가 없다 — 이 배치가 매일 아침 순위를 다시 매겨 갱신한다.
+     * Universe auto-selection (per user request): fetches top-trading-value KOSPI+KOSDAQ stocks and
+     * populates stock_master automatically. No human needs to register stocks by hand anymore — this
+     * batch re-ranks and refreshes it every morning.
      *
      * ⚠️ is_trading_halt는 "최근 시세 부재"라는 대리 신호(휴리스틱)로만 갱신한다 — 키움/KRX의 정식
-     * 거래정지 통지 연동 전까지의 임시 안전판이다. is_managed(관리종목 지정)는 우리 DB 데이터만으로는
-     * 판단할 수 없는 외부 지정 정보라 이 배치에서 다루지 않는다 (KRX/공시 API 연동 TODO).
+     * 거래정지 통지 연동 전까지의 임시 안전판이다. is_managed(관리종목 지정)는 요청 시점에 이미 TR에서
+     * 제외(mang_stk_incls=0)되므로 별도 갱신 불필요.
      * ⚠️ is_trading_halt is refreshed only via a proxy heuristic ("no recent price data") — a stopgap
-     * until Kiwoom/KRX's real halt notifications are wired in. is_managed (official "managed stock"
-     * designation) can't be derived from our own data, so this batch intentionally leaves it alone
-     * (needs a KRX/disclosure API integration, still TODO).
+     * until Kiwoom/KRX's real halt notifications are wired in. is_managed is already excluded at the
+     * TR request level (mang_stk_incls=0), so no separate refresh is needed for it.
      */
     @Scheduled(cron = "0 0 8 * * MON-FRI", zone = "Asia/Seoul")
     public void preMarketJob() {
+        universeSelectionService.refreshAutoUniverse();
+
         OffsetDateTime cutoff = OffsetDateTime.now(ZoneId.of("Asia/Seoul")).minusDays(staleTradingDays);
         int haltedCount = stockMasterMapper.markStaleAsHalted(cutoff);
         int resumedCount = stockMasterMapper.markActiveAsResumed(cutoff);

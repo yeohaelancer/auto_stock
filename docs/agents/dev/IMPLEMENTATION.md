@@ -22,6 +22,14 @@
 - `LiveOrderExecutor` 실구현: `POST /api/dostk/ordr`, Header `api-id: kt10000`(매수)/`kt10001`(매도), Body `{dmst_stex_tp, stk_cd, ord_qty, ord_uv, trde_tp}` — 매수·매도 둘 다 사용자가 포털에서 확인해 전달한 스펙 기준으로 구현·검증 완료 (두 TR이 필드 구조 동일함을 확인)
 - `trde_tp="0"`(보통/지정가)로 고정 — `OrderService`가 항상 지정가를 산정하는 현재 구조와 일치
 - 응답의 `ord_no`(주문번호)만 확인하고 **체결 여부는 별도 TR(미검증)로 확인해야 하므로 임의로 FILLED 처리하지 않고 PENDING 유지**
+## 🆕 매매 유니버스 자동선정 — 사용자 요청("종목도 시스템이 스스로 선정")
+- `KiwoomRankingClient` 신규: `POST /api/dostk/rkinfo`, `api-id: ka10032`(거래대금상위요청) — 코스피/코스닥 각각 조회, 관리종목은 요청 단계에서 제외(`mang_stk_incls=0`)
+- `UniverseSelectionService` 신규: 코스피+코스닥 거래대금 상위를 합쳐 전체 기준 상위 N개(기본 20개, 사용자 확정값)를 최종 유니버스로 확정
+- `stock_master`에 `is_auto_selected` 컬럼 추가 — 자동선정 종목과 수동 등록 종목을 구분해, 순위에서 밀려난 자동선정 종목만 소프트 삭제하고 **수동 등록 종목은 절대 건드리지 않음**
+- `TradingScheduler.preMarketJob()`(08:00 KST)에서 매일 아침 자동으로 재선정 — 더 이상 `stock_master`를 사람이 직접 채울 필요 없음
+- 조회 실패/API 미연동 시 기존 유니버스를 그대로 두고 아무것도 하지 않음(설계 §10) — 일시적 장애로 유니버스 전체가 비워지는 사고 방지
+- 로컬 DB로 직접 검증: 자동선정 종목이 순위에서 탈락하면 소프트 삭제되고 유니버스에서 자연스럽게 빠지지만, 수동 등록 종목은 그대로 유지됨을 SQL로 확인 완료
+
 ## 🆕 과다매매(잦은 재매매) 방지 — 사용자 요청(수수료 부담 완화)
 - `RiskEngine.checkOvertrading(stockCode, tradingMode)` 신규: 설계 §6 "이상 매매 감지" 항목 구현
   1. **종목별 쿨다운**: 최근 주문 후 설정 거래일수(기본 3일, `COOLDOWN_TRADING_DAYS`)가 지나기 전에는 같은 종목 재매매 차단. ⚠️ 거래일을 달력일로 근사(주말/공휴일 미반영)

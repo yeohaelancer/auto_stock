@@ -33,4 +33,28 @@
           )
     </update>
 
+    <insert id="upsertAutoSelected">
+        INSERT INTO stock_master (stock_code, stock_name, market_type, is_auto_selected)
+        VALUES (#{stockCode}, #{stockName}, #{marketType}, TRUE)
+        ON CONFLICT (stock_code) DO UPDATE SET
+            stock_name = EXCLUDED.stock_name,
+            market_type = EXCLUDED.market_type,
+            is_auto_selected = TRUE,
+            deleted_at = NULL,
+            updated_at = now()
+    </insert>
+
+    <update id="deactivateAutoSelectedNotIn">
+        UPDATE stock_master
+        SET deleted_at = now(), updated_at = now()
+        WHERE is_auto_selected = TRUE
+          AND deleted_at IS NULL
+        <if test="stockCodes != null and !stockCodes.isEmpty()">
+          AND stock_code NOT IN
+          <foreach collection="stockCodes" item="code" open="(" separator="," close=")">
+              #{code}
+          </foreach>
+        </if>
+    </update>
+
 </mapper>
