@@ -22,6 +22,12 @@
 - `LiveOrderExecutor` 실구현: `POST /api/dostk/ordr`, Header `api-id: kt10000`(매수)/`kt10001`(매도), Body `{dmst_stex_tp, stk_cd, ord_qty, ord_uv, trde_tp}` — 매수·매도 둘 다 사용자가 포털에서 확인해 전달한 스펙 기준으로 구현·검증 완료 (두 TR이 필드 구조 동일함을 확인)
 - `trde_tp="0"`(보통/지정가)로 고정 — `OrderService`가 항상 지정가를 산정하는 현재 구조와 일치
 - 응답의 `ord_no`(주문번호)만 확인하고 **체결 여부는 별도 TR(미검증)로 확인해야 하므로 임의로 FILLED 처리하지 않고 PENDING 유지**
+## 🆕 AI 실데이터 학습 임계치 도달 시간 단축 — 피처 전 구간 백필
+- `FeatureEngineeringService.computeAndSave()` → `computeAndSaveHistory()`로 개편: 기존엔 60일치 시세를 받아오면서도 가장 최근 하루치 피처만 저장하던 것을, **MACD 계산 가능 구간(26일차 이후) 전체**에 대해 한 번에 백필하도록 수정
+- 종목당 하루 1건 → 최대 35건(60일 조회 기준)으로 피처 축적 속도 대폭 개선. `train.py`의 실데이터 학습 임계치(`MIN_REAL_SAMPLES=200`) 도달 시간이 "약 3주"에서 "첫 배치 실행 후 며칠"로 단축될 것으로 기대
+- `TradingScheduler.collectPriceHistoryAndFeatures()`가 새 메서드를 호출하도록 갱신
+- 컴파일 검증 완료. 기존에 검증된 매퍼(`PriceHistoryMapper.findRecent`, `FeatureDailyMapper.upsert`)만 재사용하는 순수 로직 변경이라 이번엔 별도 재기동 DB 테스트는 생략 — 코드 리뷰로 반복 횟수(26~59번째 인덱스, 최대 35회)만 재확인
+
 ## 🆕 매매 유니버스 자동선정 — 사용자 요청("종목도 시스템이 스스로 선정")
 - `KiwoomRankingClient` 신규: `POST /api/dostk/rkinfo`, `api-id: ka10032`(거래대금상위요청) — 코스피/코스닥 각각 조회, 관리종목은 요청 단계에서 제외(`mang_stk_incls=0`)
 - `UniverseSelectionService` 신규: 코스피+코스닥 거래대금 상위를 합쳐 전체 기준 상위 N개(기본 20개, 사용자 확정값)를 최종 유니버스로 확정

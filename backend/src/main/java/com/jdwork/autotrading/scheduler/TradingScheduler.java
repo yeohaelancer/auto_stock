@@ -340,7 +340,7 @@ public class TradingScheduler {
                     continue; // 시세 미확보 — 이 종목만 스킵 (no price available — skip just this stock)
                 }
                 bars.forEach(priceHistoryMapper::upsert);
-                featureEngineeringService.computeAndSave(stockCode);
+                featureEngineeringService.computeAndSaveHistory(stockCode);
                 collected++;
             } catch (Exception e) {
                 // 한 종목의 실패가 나머지 종목 수집을 막지 않도록 격리 (TradingScheduler 전반의 원칙과 동일)
