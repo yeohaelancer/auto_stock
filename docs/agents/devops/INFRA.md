@@ -45,7 +45,7 @@
 - [ ] `backend`, `ml-service` 헬스체크 통과
 - [ ] QA `BUG_REPORT.md` BUG-001/BUG-002 수정 완료 확인 (Phase 1 완료 조건)
 - [ ] `TRADING_MODE=MOCK` 상태로 최초 배포 (LIVE 전환은 별도 승인 절차)
-- [x] ~~초기 `account_snapshot` 1건 수동 시딩~~ — `postMarketJob` 구현 완료로 불필요해짐 (최초 장마감 배치 이후 자동 생성)
+- [ ] (선택) 배포 첫날부터 장중 스캔이 바로 동작하길 원하면 `backend/scripts/seed-initial-snapshot.sh` 실행 — 안 해도 둘째 날부터는 `postMarketJob`이 자동으로 스냅샷을 만들어 정상 동작함 (MOCK 전용, LIVE는 스크립트 자체가 거부)
 - [ ] `.env`에 `MOCK_INITIAL_CAPITAL`(모의투자 초기 시드머니) 설정 확인
 - [ ] `ml-service` 배포 전 `python train.py`로 `model.pkl` 생성 후 이미지/볼륨에 포함 (없으면 placeholder 응답만 반환)
 - [ ] AI 예측은 합성 라벨 모델 상태임을 운영 담당자에게 명확히 공유 — 실거래 신호로 사용 금지

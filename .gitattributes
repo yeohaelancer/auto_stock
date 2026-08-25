@@ -1,0 +1,5 @@
+# 셸 스크립트는 Docker(Linux) 환경에서 실행되므로 체크아웃 시 CRLF로 변환되면 실행이 깨진다
+# (셔뱅 라인이 "/bin/bash\r"가 되어 "bad interpreter" 오류 발생) — 항상 LF로 강제한다.
+# Shell scripts run inside Docker (Linux); if checked out with CRLF the shebang becomes
+# "/bin/bash\r" and fails with "bad interpreter" — always force LF.
+*.sh text eol=lf
