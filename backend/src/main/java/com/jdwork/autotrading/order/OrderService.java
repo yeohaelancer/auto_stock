@@ -108,6 +108,15 @@ public class OrderService {
             return Optional.empty(); // 리스크 사전 차단 시 주문 자체를 만들지 않음 (never create an order once pre-blocked)
         }
 
+        // 1-2단계: 과다매매 방지 검증(쿨다운/일일 거래 한도) — 사용자 요청(수수료 부담 완화) 반영
+        // Step 1-2: overtrading-prevention check (cooldown/daily trade cap) — per user request to curb fee drag
+        RiskEngine.RiskCheckResult overtradingCheck = riskEngine.checkOvertrading(stockCode, tradingMode);
+        if (!overtradingCheck.approved()) {
+            log.info("과다매매 방지로 신호 거부: {} - {} (rejected by overtrading guard: {} - {})",
+                    stockCode, overtradingCheck.rejectReason(), stockCode, overtradingCheck.rejectReason());
+            return Optional.empty();
+        }
+
         // 2단계: 시세 조회 — 실패/미연동 시 절대 임의 가격으로 대체하지 않고 매매를 스킵 (설계 §10, Review 지적사항)
         // Step 2: price lookup — never substitute a fabricated price on failure; skip the trade instead (design doc §10)
         BigDecimal price = latestClosePrice(stockCode);

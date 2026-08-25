@@ -22,6 +22,14 @@
 - `LiveOrderExecutor` 실구현: `POST /api/dostk/ordr`, Header `api-id: kt10000`(매수)/`kt10001`(매도), Body `{dmst_stex_tp, stk_cd, ord_qty, ord_uv, trde_tp}` — 매수·매도 둘 다 사용자가 포털에서 확인해 전달한 스펙 기준으로 구현·검증 완료 (두 TR이 필드 구조 동일함을 확인)
 - `trde_tp="0"`(보통/지정가)로 고정 — `OrderService`가 항상 지정가를 산정하는 현재 구조와 일치
 - 응답의 `ord_no`(주문번호)만 확인하고 **체결 여부는 별도 TR(미검증)로 확인해야 하므로 임의로 FILLED 처리하지 않고 PENDING 유지**
+## 🆕 과다매매(잦은 재매매) 방지 — 사용자 요청(수수료 부담 완화)
+- `RiskEngine.checkOvertrading(stockCode, tradingMode)` 신규: 설계 §6 "이상 매매 감지" 항목 구현
+  1. **종목별 쿨다운**: 최근 주문 후 설정 거래일수(기본 3일, `COOLDOWN_TRADING_DAYS`)가 지나기 전에는 같은 종목 재매매 차단. ⚠️ 거래일을 달력일로 근사(주말/공휴일 미반영)
+  2. **일일 최대 거래 횟수**: 계좌 전체 기준 하루 거래 건수가 한도(기본 5회, `MAX_DAILY_TRADES`) 도달 시 신규 주문 차단
+- `OrderService.processSignal()`의 신호 단계 검증 직후(가격 조회 전)에 삽입 — 불필요한 시세 조회/포지션 사이징 계산을 아끼는 효과도 있음
+- `OrderLogMapper.findLastOrderTime`/`countOrdersSince` 신규
+- **명시적으로 하지 않은 것**: "기대수익이 수수료를 못 넘으면 거래 안 함" 필터는 추가하지 않음 — AI 예측의 `expectedReturn` 필드가 현재 항상 null이라(실측 기반 근거 없음) 신뢰할 수 없는 값으로 필터링하면 오히려 오판단을 부를 수 있어 보류. AI 모델이 실제 기대수익률을 출력하게 되면 추가 검토
+
 ## 🧪 실제 기동 테스트 (2026-08-24) — 발견 및 수정한 실버그
 `./gradlew wrapper`로 Gradle Wrapper를 신규 생성하고, 로컬 PostgreSQL 16(포터블 바이너리)에 `schema.sql`을 적용한 뒤 실제로 `bootRun`, REST API 호출, DB 조회까지 end-to-end로 검증했다. 지금까지 한 번도 실제 컴파일/기동을 해본 적이 없어서 아래 4건이 숨어 있었다 — 전부 이번에 발견·수정 완료:
 

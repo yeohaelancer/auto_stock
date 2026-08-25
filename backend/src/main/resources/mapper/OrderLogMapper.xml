@@ -66,4 +66,20 @@
         WHERE order_id = #{orderId}
     </update>
 
+    <select id="findLastOrderTime" resultType="java.time.OffsetDateTime">
+        SELECT MAX(created_at)
+        FROM order_log
+        WHERE stock_code = #{stockCode}
+          AND trading_mode = #{tradingMode}
+          AND deleted_at IS NULL
+    </select>
+
+    <select id="countOrdersSince" resultType="int">
+        SELECT COUNT(*)
+        FROM order_log
+        WHERE trading_mode = #{tradingMode}
+          AND created_at >= #{since}
+          AND deleted_at IS NULL
+    </select>
+
 </mapper>

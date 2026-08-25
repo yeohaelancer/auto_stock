@@ -1,6 +1,7 @@
 package com.jdwork.autotrading.risk;
 
 import com.jdwork.autotrading.order.domain.OrderLog;
+import com.jdwork.autotrading.order.mapper.OrderLogMapper;
 import com.jdwork.autotrading.risk.domain.RiskEvent;
 import com.jdwork.autotrading.strategy.domain.StrategySignal;
 import org.slf4j.Logger;
@@ -10,6 +11,10 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -25,9 +30,14 @@ public class RiskEngine {
 
     private static final Logger log = LoggerFactory.getLogger(RiskEngine.class);
 
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+
     private final BigDecimal dailyLossLimitRate;
     private final BigDecimal maxPositionRatioPerStock;
     private final BigDecimal minCashRatio;
+    private final int cooldownTradingDays;
+    private final int maxDailyTrades;
+    private final OrderLogMapper orderLogMapper;
 
     /** 수동 긴급정지(Kill Switch) 상태 — 대시보드 버튼으로 즉시 true 전환 (설계 §6, §9.1). */
     /** Manual kill switch state — flipped to true instantly via the dashboard button (design doc §6, §9.1). */
@@ -36,10 +46,16 @@ public class RiskEngine {
     public RiskEngine(
             @Value("${trading.risk.daily-loss-limit-rate}") BigDecimal dailyLossLimitRate,
             @Value("${trading.risk.max-position-ratio-per-stock}") BigDecimal maxPositionRatioPerStock,
-            @Value("${trading.risk.min-cash-ratio}") BigDecimal minCashRatio) {
+            @Value("${trading.risk.min-cash-ratio}") BigDecimal minCashRatio,
+            @Value("${trading.risk.cooldown-trading-days}") int cooldownTradingDays,
+            @Value("${trading.risk.max-daily-trades}") int maxDailyTrades,
+            OrderLogMapper orderLogMapper) {
         this.dailyLossLimitRate = dailyLossLimitRate;
         this.maxPositionRatioPerStock = maxPositionRatioPerStock;
         this.minCashRatio = minCashRatio;
+        this.cooldownTradingDays = cooldownTradingDays;
+        this.maxDailyTrades = maxDailyTrades;
+        this.orderLogMapper = orderLogMapper;
     }
 
     /**
@@ -97,6 +113,40 @@ public class RiskEngine {
                 .divide(context.totalAccountValue(), 6, RoundingMode.HALF_UP);
         if (projectedCashRatio.compareTo(minCashRatio) < 0) {
             return RiskCheckResult.rejected("최소 현금 보유 비율 미달 (minimum cash ratio violated)");
+        }
+
+        return RiskCheckResult.approve();
+    }
+
+    /**
+     * 과다매매(잦은 재매매) 방지 검증 — 설계 §6 "이상 매매 감지" 항목의 일부 (증권사 수수료 부담 완화 목적).
+     * Overtrading-prevention check — part of the design doc §6 "anomaly detection" item (aimed at
+     * curbing brokerage fee drag from too-frequent buy/sell cycles).
+     *
+     * 1) 종목별 쿨다운: 해당 종목에 최근 주문이 있었다면 설정된 거래일수가 지나기 전까지 재매매 차단.
+     *    ⚠️ "거래일"은 달력일로 근사한다(주말/공휴일 미반영) — 정밀한 영업일 계산이 필요하면 추후 개선.
+     * 2) 계좌 전체 일일 최대 거래 횟수: 하루 동안 발생한 총 주문 건수가 한도에 도달하면 신규 주문 차단.
+     *
+     * 1) Per-stock cooldown: blocks re-trading the same stock until the configured number of trading
+     *    days has passed since its last order. ⚠️ "Trading days" is approximated as calendar days
+     *    (weekends/holidays not excluded) — refine later if precise business-day math is needed.
+     * 2) Account-wide daily trade cap: blocks new orders once today's total order count hits the limit.
+     */
+    public RiskCheckResult checkOvertrading(String stockCode, String tradingMode) {
+        OffsetDateTime lastOrderAt = orderLogMapper.findLastOrderTime(stockCode, tradingMode);
+        if (lastOrderAt != null) {
+            long daysSinceLastOrder = ChronoUnit.DAYS.between(lastOrderAt.toLocalDate(), LocalDate.now(KST));
+            if (daysSinceLastOrder < cooldownTradingDays) {
+                return RiskCheckResult.rejected("종목 재매매 최소 보유기간 미충족 — 최근 주문 후 " + daysSinceLastOrder
+                        + "일 경과(기준 " + cooldownTradingDays + "일) (per-stock cooldown active)");
+            }
+        }
+
+        OffsetDateTime startOfToday = LocalDate.now(KST).atStartOfDay(KST).toOffsetDateTime();
+        int todaysTradeCount = orderLogMapper.countOrdersSince(tradingMode, startOfToday);
+        if (todaysTradeCount >= maxDailyTrades) {
+            return RiskCheckResult.rejected("일일 최대 거래 횟수 초과(" + todaysTradeCount + "/" + maxDailyTrades
+                    + ") (daily trade limit exceeded)");
         }
 
         return RiskCheckResult.approve();

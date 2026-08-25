@@ -92,6 +92,11 @@
 - **체결 확인** (`KiwoomFillInquiryClient` + `TradingScheduler.checkPendingFills`, TR: ka10076): LIVE 모드에서 1분마다 PENDING/PARTIAL 주문을 자동 확인해 FILLED/PARTIAL로 갱신
 - **LIVE 계좌 잔고/보유종목** (`KiwoomCashBalanceClient` TR: kt00001 + `KiwoomBalanceClient` TR: kt00018): `postMarketJob`이 이제 LIVE 모드도 스킵하지 않고 실제 예수금(명시적 필드) + 보유종목 평가액을 조합해 스냅샷·포지션을 저장. 이전에 시도했던 추론 기반 현금 계산은 폐기하고 명시적 `entr`(예수금) 필드로 교체 — Phase 5 전 필수 검증 항목이었던 사항 해소됨
 
+## ✅ 과다매매 방지 (사용자 요청, 2026-08-24)
+"자동매매 목표 수익률 주 5%" 요청에 대해서는 **투자자문·수익률 보장에 해당해 응하지 않았음**을 명시 (그런 목표를 달성 가능한 것처럼 시스템을 튜닝하면 오히려 과최적화/과도한 리스크로 이어짐). 대신 정당한 엔지니어링 요청인 "잦은 매매로 인한 수수료 부담 완화"만 구현:
+- 종목별 쿨다운(3거래일, 사용자 확정값) + 계좌 전체 일일 최대 거래 횟수(5회, 기본값) — `RiskEngine.checkOvertrading()`
+- 실거래 실행은 여전히 사용자가 직접 서버를 배포·운영해야 하는 영역 (Claude가 대신 자금을 움직이지 않음)
+
 ## ✅ 실제 기동 테스트 완료 (2026-08-24)
 로컬 PostgreSQL + 실제 `bootRun`으로 최초 end-to-end 검증을 진행해 **4건의 실버그**를 발견·수정함 (상세는 [IMPLEMENTATION.md](../dev/IMPLEMENTATION.md) 참고):
 1. `RiskEngine.RiskCheckResult` 정적 팩토리 메서드명 충돌로 **컴파일 자체가 안 되던 버그**

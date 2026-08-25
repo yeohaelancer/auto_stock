@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -51,4 +52,16 @@ public interface OrderLogMapper {
     void updateFillStatus(@Param("orderId") java.util.UUID orderId,
                            @Param("executionStatus") String executionStatus,
                            @Param("executedPrice") BigDecimal executedPrice);
+
+    /**
+     * 해당 종목의 가장 최근 주문 시각을 조회한다 — 과다매매(잦은 재매매) 방지용 쿨다운 판정에 사용.
+     * Fetch the most recent order timestamp for the stock — used for the overtrading-prevention cooldown check.
+     */
+    OffsetDateTime findLastOrderTime(@Param("stockCode") String stockCode, @Param("tradingMode") String tradingMode);
+
+    /**
+     * 지정 시각 이후 생성된 주문 건수를 센다 — 일일 최대 거래 횟수 판정에 사용.
+     * Counts orders created since the given timestamp — used for the daily trade-count limit check.
+     */
+    int countOrdersSince(@Param("tradingMode") String tradingMode, @Param("since") OffsetDateTime since);
 }
