@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 계좌/포지션 조회 서비스.
@@ -44,15 +45,17 @@ public class AccountService {
         List<Position> positions = getPositions(accountId, tradingMode);
         BigDecimal positionsValue = sumPositionValue(positions);
 
-        BigDecimal targetPositionValue = positions.stream()
+        Optional<Position> targetPosition = positions.stream()
                 .filter(p -> p.getStockCode().equals(targetStockCode))
-                .findFirst()
+                .findFirst();
+        BigDecimal targetPositionValue = targetPosition
                 .map(p -> p.getAvgPrice().multiply(BigDecimal.valueOf(p.getQuantity())))
                 .orElse(BigDecimal.ZERO);
+        int targetPositionQuantity = targetPosition.map(Position::getQuantity).orElse(0);
 
         BigDecimal totalAccountValue = cashBalance.add(positionsValue);
 
-        return new AccountRiskContext(totalAccountValue, cashBalance, targetPositionValue);
+        return new AccountRiskContext(totalAccountValue, cashBalance, targetPositionValue, targetPositionQuantity);
     }
 
     /**

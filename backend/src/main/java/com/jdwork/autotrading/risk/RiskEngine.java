@@ -85,14 +85,22 @@ public class RiskEngine {
      * Final validation right before order creation — checks per-stock position limit and min cash ratio
      * (design doc §6, BUG-002 fix).
      *
-     * BUY 주문에만 적용한다. SELL은 보유 비중을 줄이는 방향이라 포지션/현금 한도 취지에 위배되지 않는다.
-     * Applies to BUY orders only — SELL reduces exposure, so it never violates these limits.
+     * 종목당 포지션 한도/최소 현금 비율은 BUY 주문에만 적용한다 — SELL은 보유 비중을 줄이는 방향이라
+     * 그 취지에 위배되지 않는다. 다만 SELL이라도 실제 보유 수량을 초과할 수는 없다 — 이 체크가 빠져있어
+     * 실운영 중 "보유하지 않은 종목도 SELL이 그대로 체결"되는 버그(가짜 현금 생성)가 발생했었다.
+     * Per-stock position limit / min cash ratio apply to BUY orders only — SELL reduces exposure, so it
+     * never violates those. But a SELL still can never exceed actual holdings — missing this check let a
+     * SELL fill for stocks with zero holdings in real operation (fabricating cash out of nowhere).
      */
     public RiskCheckResult validateOrder(OrderLog order, AccountRiskContext context) {
         if (emergencyStopped.get()) {
             return RiskCheckResult.rejected("긴급정지 상태 — 모든 신규 주문 차단 (emergency stop active — all new orders blocked)");
         }
-        if (order.getOrderType() != OrderLog.OrderType.BUY) {
+        if (order.getOrderType() == OrderLog.OrderType.SELL) {
+            if (order.getQuantity() > context.targetPositionQuantity()) {
+                return RiskCheckResult.rejected("보유 수량 부족 — 공매도 차단 (주문수량=" + order.getQuantity()
+                        + ", 보유수량=" + context.targetPositionQuantity() + ") (insufficient holdings — short-selling blocked)");
+            }
             return RiskCheckResult.approve();
         }
         if (context.totalAccountValue().signum() <= 0) {

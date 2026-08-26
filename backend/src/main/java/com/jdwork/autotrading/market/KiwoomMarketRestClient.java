@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -19,8 +20,10 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 키움증권 REST API 시세 클라이언트.
@@ -46,6 +49,25 @@ public class KiwoomMarketRestClient implements KiwoomMarketClient {
     private static final String DAILY_PRICE_PATH = "/api/dostk/mrkcond";
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+
+    /**
+     * 키움 REST TR의 연속조회(pagination) 헤더 — 실제 모의투자 API를 직접 호출해 확인함(2026-08-26):
+     * 응답 헤더에 cont-yn(Y/N), next-key, resp-cnt(이번 페이지 건수, 관측상 20건 고정)가 내려오고,
+     * 다음 페이지를 받으려면 같은 이름의 요청 헤더로 next-key를 그대로 돌려보내야 한다.
+     * 이걸 몰랐을 때는 종목당 항상 최신 20일치만 받아왔다 — count=60을 요청해도 API가 실제로는
+     * 20건만 주는데 그걸 그대로 받아들이고 있었던 것 (원래 의도했던 60일 백필이 계속 20일로 조용히
+     * 잘려있던 셈).
+     * Kiwoom REST TR pagination headers — confirmed by calling the mock API directly (2026-08-26):
+     * the response carries cont-yn (Y/N), next-key, and resp-cnt (this page's count, observed fixed at
+     * 20); the next page is fetched by echoing next-key back as a request header of the same name.
+     * Before this was known, every stock only ever got the latest 20 days — requesting count=60 did
+     * nothing because the API only ever returns 20 per call and that was accepted as the full answer
+     * (the intended 60-day backfill was silently truncated to 20 all along).
+     */
+    private static final String CONT_YN_HEADER = "cont-yn";
+    private static final String NEXT_KEY_HEADER = "next-key";
+    /** 무한루프 방지용 안전판 — count가 아무리 커도 이 페이지 수를 넘기지 않는다. Safety cap against a runaway loop, regardless of how large count is. */
+    private static final int MAX_PAGES = 50;
 
     private final WebClient webClient;
     private final KiwoomTokenClient tokenClient;
@@ -87,35 +109,62 @@ public class KiwoomMarketRestClient implements KiwoomMarketClient {
             return List.of();
         }
 
-        try {
-            rateLimiter.asBlocking().consume(1); // 종목 순회 호출 사이 초당 요청 한도 대기 (block until under the per-second cap)
-            String queryDate = LocalDate.now(KST).format(YYYYMMDD);
-            DailyPriceResponse response = webClient.post()
-                    .uri(DAILY_PRICE_PATH)
-                    .header("authorization", "Bearer " + tokenClient.getAccessToken())
-                    .header("api-id", DAILY_PRICE_TR)
-                    .contentType(MediaType.valueOf("application/json;charset=UTF-8"))
-                    .bodyValue(new DailyPriceRequest(stockCode, queryDate, "0"))
-                    .retrieve()
-                    .bodyToMono(DailyPriceResponse.class)
-                    .block();
+        String queryDate = LocalDate.now(KST).format(YYYYMMDD);
+        List<PriceBar> collected = new ArrayList<>();
+        String contYn = null;
+        String nextKey = null;
 
-            if (response == null || response.dalyStkpc() == null) {
-                return List.of();
+        for (int page = 0; page < MAX_PAGES && collected.size() < count; page++) {
+            try {
+                rateLimiter.asBlocking().consume(1); // 종목/페이지 호출 사이 초당 요청 한도 대기 (block until under the per-second cap)
+
+                WebClient.RequestBodySpec request = webClient.post()
+                        .uri(DAILY_PRICE_PATH)
+                        .header("authorization", "Bearer " + tokenClient.getAccessToken())
+                        .header("api-id", DAILY_PRICE_TR)
+                        .contentType(MediaType.valueOf("application/json;charset=UTF-8"));
+                if (nextKey != null) {
+                    // 첫 페이지는 이 헤더들을 빼고 보낸다 — 이어서 받을 페이지가 없을 때부터만 붙인다
+                    // Omit these on the first page — only attach once there's an actual page to continue from
+                    request = request.header(CONT_YN_HEADER, "Y").header(NEXT_KEY_HEADER, nextKey);
+                }
+
+                ResponseEntity<DailyPriceResponse> response = request
+                        .bodyValue(new DailyPriceRequest(stockCode, queryDate, "0"))
+                        .retrieve()
+                        .toEntity(DailyPriceResponse.class)
+                        .block();
+
+                if (response == null || response.getBody() == null || response.getBody().dalyStkpc() == null) {
+                    break;
+                }
+
+                response.getBody().dalyStkpc().stream()
+                        .map(entry -> toPriceBar(stockCode, entry))
+                        .filter(Objects::nonNull)
+                        .forEach(collected::add);
+
+                contYn = response.getHeaders().getFirst(CONT_YN_HEADER);
+                nextKey = response.getHeaders().getFirst(NEXT_KEY_HEADER);
+            } catch (Exception e) {
+                // 조회 실패 시 절대 임의 값으로 대체하지 않는다 (설계 §10) — 다만 이전 페이지에서 이미
+                // 실제로 받아온 데이터는 조작된 값이 아니므로 폐기하지 않고 그대로 반환한다.
+                // Never fabricate a value on failure (design doc §10) — but real bars already fetched in
+                // earlier pages aren't fabricated, so they're kept and returned rather than discarded.
+                log.error("키움 일별주가 조회 실패 — {} 종목, {}번째 페이지 (Kiwoom daily price lookup failed for {}, page {})",
+                        stockCode, page, stockCode, page, e);
+                break;
             }
 
-            return response.dalyStkpc().stream()
-                    .map(entry -> toPriceBar(stockCode, entry))
-                    .filter(java.util.Objects::nonNull)
-                    .sorted(Comparator.comparing(PriceBar::tradeDateTime).reversed()) // 응답 정렬 순서를 가정하지 않고 직접 최신순 정렬
-                    .limit(count)
-                    .toList();
-        } catch (Exception e) {
-            // 조회 실패 시 절대 임의 값으로 대체하지 않고 빈 목록 반환 (설계 §10)
-            // Never fabricate a value on failure — return an empty list instead (design doc §10)
-            log.error("키움 일별주가 조회 실패 — {} 종목 (Kiwoom daily price lookup failed for {})", stockCode, stockCode, e);
-            return List.of();
+            if (!"Y".equalsIgnoreCase(contYn) || nextKey == null || nextKey.isBlank()) {
+                break; // 더 받을 페이지 없음 (no more pages available)
+            }
         }
+
+        return collected.stream()
+                .sorted(Comparator.comparing(PriceBar::tradeDateTime).reversed()) // 응답 정렬 순서를 가정하지 않고 직접 최신순 정렬
+                .limit(count)
+                .toList();
     }
 
     private PriceBar toPriceBar(String stockCode, DailyPriceEntry entry) {

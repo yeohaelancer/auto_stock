@@ -13,6 +13,7 @@ import com.jdwork.autotrading.risk.domain.RiskEvent;
 import com.jdwork.autotrading.risk.mapper.RiskEventMapper;
 import com.jdwork.autotrading.strategy.SignalEngine;
 import com.jdwork.autotrading.strategy.domain.StrategySignal;
+import com.jdwork.autotrading.strategy.mapper.StrategySignalMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -49,6 +50,7 @@ public class OrderService {
     private final OrderExecutor orderExecutor;
     private final OrderLogMapper orderLogMapper;
     private final RiskEventMapper riskEventMapper;
+    private final StrategySignalMapper strategySignalMapper;
     private final TradingModeConfig tradingModeConfig;
     private final KiwoomApiProperties kiwoomApiProperties;
 
@@ -59,6 +61,7 @@ public class OrderService {
                          OrderExecutor orderExecutor,
                          OrderLogMapper orderLogMapper,
                          RiskEventMapper riskEventMapper,
+                         StrategySignalMapper strategySignalMapper,
                          TradingModeConfig tradingModeConfig,
                          KiwoomApiProperties kiwoomApiProperties,
                          @org.springframework.beans.factory.annotation.Value("${trading.risk.max-position-ratio-per-stock}")
@@ -70,6 +73,7 @@ public class OrderService {
         this.orderExecutor = orderExecutor;
         this.orderLogMapper = orderLogMapper;
         this.riskEventMapper = riskEventMapper;
+        this.strategySignalMapper = strategySignalMapper;
         this.tradingModeConfig = tradingModeConfig;
         this.kiwoomApiProperties = kiwoomApiProperties;
         this.targetPositionRatio = targetPositionRatio;
@@ -95,6 +99,12 @@ public class OrderService {
         if (signal.getSignalType() == StrategySignal.SignalType.HOLD) {
             return Optional.empty();
         }
+
+        // trading_order_log.signal_id가 trading_strategy_signal을 참조하는 FK이므로, order_log에
+        // 뭔가 쓰기 전에 반드시 먼저 저장돼 있어야 한다 (실운영 중 FK 위반으로 발견된 누락 단계).
+        // trading_order_log.signal_id is an FK into trading_strategy_signal, so this must be persisted
+        // before anything is written to order_log (a missing step found via a real FK-violation failure).
+        strategySignalMapper.insert(signal);
 
         String accountId = kiwoomApiProperties.getAccountNo();
         String tradingMode = tradingModeConfig.getMode().name();

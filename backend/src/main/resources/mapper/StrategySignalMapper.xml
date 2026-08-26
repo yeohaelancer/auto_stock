@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jdwork.autotrading.strategy.mapper.StrategySignalMapper">
+
+    <insert id="insert" parameterType="com.jdwork.autotrading.strategy.domain.StrategySignal">
+        INSERT INTO trading_strategy_signal (
+            signal_id, stock_code, prediction_id, signal_type, generated_at, status, reject_reason
+        ) VALUES (
+            #{signalId}, #{stockCode}, #{predictionId}, #{signalType}, #{generatedAt}, #{status}, #{rejectReason}
+        )
+    </insert>
+
+</mapper>
