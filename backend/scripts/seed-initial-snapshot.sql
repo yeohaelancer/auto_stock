@@ -18,15 +18,16 @@
 --    (kt00001/kt00018) — never seeded arbitrarily via this script. The wrapper shell script
 --    (seed-initial-snapshot.sh) enforces this.
 --
--- 사용법 (Usage): psql -v account_id="'...'" -v trading_mode="'MOCK'" -v initial_capital=10000000 -f seed-initial-snapshot.sql
--- (직접 실행하지 말고 seed-initial-snapshot.sh를 통해 실행할 것 — 파라미터 검증을 대신 해준다)
--- (Prefer running via seed-initial-snapshot.sh, not directly — it validates the parameters for you)
+-- 사용법 (Usage): 직접 실행하지 말고 seed-initial-snapshot.sh를 통해 실행할 것
+-- (@account_id/@trading_mode/@initial_capital 세션 변수를 그 스크립트가 미리 설정해준다)
+-- (Prefer running via seed-initial-snapshot.sh, not directly — it sets the
+--  @account_id/@trading_mode/@initial_capital session variables this script reads)
 
-INSERT INTO account_snapshot (account_id, trading_mode, snapshot_date, total_value, cash_balance, daily_pnl, daily_pnl_rate)
-VALUES (:account_id, :trading_mode, CURRENT_DATE, :initial_capital, :initial_capital, 0, 0)
-ON CONFLICT (account_id, trading_mode, snapshot_date) WHERE deleted_at IS NULL
-DO UPDATE SET
-    total_value = EXCLUDED.total_value,
-    cash_balance = EXCLUDED.cash_balance,
-    daily_pnl = EXCLUDED.daily_pnl,
-    daily_pnl_rate = EXCLUDED.daily_pnl_rate;
+INSERT INTO trading_account_snapshot (account_id, trading_mode, snapshot_date, total_value, cash_balance, daily_pnl, daily_pnl_rate)
+VALUES (@account_id, @trading_mode, CURRENT_DATE, @initial_capital, @initial_capital, 0, 0)
+ON DUPLICATE KEY UPDATE
+    total_value = VALUES(total_value),
+    cash_balance = VALUES(cash_balance),
+    daily_pnl = VALUES(daily_pnl),
+    daily_pnl_rate = VALUES(daily_pnl_rate),
+    deleted_at = NULL;

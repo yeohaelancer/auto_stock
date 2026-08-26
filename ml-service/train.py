@@ -19,7 +19,7 @@ import os
 
 import numpy as np
 import pandas as pd
-import psycopg2
+import pymysql
 import lightgbm as lgb
 import joblib
 
@@ -39,35 +39,35 @@ MIN_REAL_SAMPLES = 200
 
 
 def _db_connection():
-    return psycopg2.connect(
+    return pymysql.connect(
         host=os.getenv("DB_HOST", "localhost"),
-        port=os.getenv("DB_PORT", "5432"),
-        dbname=os.getenv("DB_NAME", "autotrading"),
-        user=os.getenv("DB_USER", "autotrading"),
-        password=os.getenv("DB_PASSWORD", ""),
+        port=int(os.getenv("DB_PORT", "3306")),
+        db=os.getenv("DB_NAME", "JDWORKS"),
+        user=os.getenv("DB_USER", "jdwadmin"),
+        password=os.getenv("DB_PASSWORD", "!jdwadmin"),
         connect_timeout=5,
     )
 
 
 def load_real_dataset() -> pd.DataFrame:
     """
-    feature_daily의 각 (종목, 기준일)에 대해, 기준일 종가와 N거래일 후 종가를 조인해 실제 등락 라벨을 만든다.
-    Joins each feature_daily (stock, base_date) row with the close price N trading days later to build
+    trading_feature_daily의 각 (종목, 기준일)에 대해, 기준일 종가와 N거래일 후 종가를 조인해 실제 등락 라벨을 만든다.
+    Joins each trading_feature_daily (stock, base_date) row with the close price N trading days later to build
     a real outcome label.
     """
     query = """
         WITH ranked_price AS (
             SELECT stock_code,
-                   trade_datetime::date AS trade_date,
+                   DATE(trade_datetime) AS trade_date,
                    close_price,
                    ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY trade_datetime) AS rn
-            FROM price_history
+            FROM trading_price_history
             WHERE interval_type = 'DAILY' AND deleted_at IS NULL
         )
         SELECT f.stock_code, f.base_date, f.ma5, f.ma20, f.rsi14, f.macd,
                f.bollinger_upper, f.bollinger_lower,
                base.close_price AS base_close, future.close_price AS future_close
-        FROM feature_daily f
+        FROM trading_feature_daily f
         JOIN ranked_price base ON base.stock_code = f.stock_code AND base.trade_date = f.base_date
         JOIN ranked_price future ON future.stock_code = f.stock_code AND future.rn = base.rn + %(horizon)s
         WHERE f.deleted_at IS NULL

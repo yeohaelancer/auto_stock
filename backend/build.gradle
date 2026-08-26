@@ -20,7 +20,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webflux' // 키움/FastAPI 호출용 WebClient (WebClient for Kiwoom/FastAPI calls)
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.3'
-    implementation 'org.postgresql:postgresql:42.7.4'
+    implementation 'com.mysql:mysql-connector-j:8.4.0'
     implementation 'com.bucket4j:bucket4j-core:8.10.1' // 키움 TR 호출 제한 대응 (rate limiting for Kiwoom TR calls)
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'

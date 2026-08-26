@@ -1,0 +1,19 @@
+{
+  "name": "auto-trading-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "주식 자동매매 대시보드 — JD WORK에 종속되지 않는 단독 실행형 Vue 앱 (standalone Vue app, no dependency on the JD WORK host dashboard)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "vite": "^5.4.0"
+  }
+}

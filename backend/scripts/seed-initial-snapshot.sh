@@ -16,9 +16,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 DB_HOST="${DB_HOST:-localhost}"
-DB_PORT="${DB_PORT:-5432}"
-DB_NAME="${DB_NAME:-autotrading}"
-DB_USER="${DB_USER:-autotrading}"
+DB_PORT="${DB_PORT:-3306}"
+DB_NAME="${DB_NAME:-JDWORKS}"
+DB_USER="${DB_USER:-jdwadmin}"
 
 if [ -z "${DB_PASSWORD:-}" ]; then
     echo "❌ DB_PASSWORD 환경변수가 설정되지 않았습니다. (.env를 먼저 로드하세요)" >&2
@@ -41,12 +41,16 @@ fi
 echo "▶ 초기 계좌 스냅샷 시딩: account='${ACCOUNT_ID}', mode=${TRADING_MODE}, capital=${INITIAL_CAPITAL}"
 echo "▶ Seeding initial account snapshot: account='${ACCOUNT_ID}', mode=${TRADING_MODE}, capital=${INITIAL_CAPITAL}"
 
-PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
-    -v ON_ERROR_STOP=1 \
-    -v account_id="'${ACCOUNT_ID}'" \
-    -v trading_mode="'${TRADING_MODE}'" \
-    -v initial_capital="${INITIAL_CAPITAL}" \
-    -f seed-initial-snapshot.sql
+# mysql 클라이언트는 psql의 ":var" 파일 변수 치환이 없으므로, 세션 변수(SET @var=...)를 먼저 정의한
+# 다음 seed-initial-snapshot.sql이 그 값을 읽어 쓰도록 표준입력으로 이어붙인다.
+# The mysql client has no psql-style ":var" file substitution, so we define session variables
+# (SET @var=...) first, then pipe seed-initial-snapshot.sql in via stdin to read them.
+MYSQL_PWD="$DB_PASSWORD" mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" "$DB_NAME" <<SQL
+SET @account_id = '${ACCOUNT_ID}';
+SET @trading_mode = '${TRADING_MODE}';
+SET @initial_capital = ${INITIAL_CAPITAL};
+SOURCE seed-initial-snapshot.sql
+SQL
 
 echo "✅ 완료 — 오늘부터 intradaySignalScan()이 스킵되지 않습니다."
 echo "✅ Done — intradaySignalScan() will no longer be skipped from today."

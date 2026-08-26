@@ -1,0 +1,26 @@
+Starting the backend in MOCK mode (DB=localhost:3306/JDWORKS)
+> Task :compileJava UP-TO-DATE
+> Task :processResources UP-TO-DATE
+> Task :classes UP-TO-DATE
+> Task :resolveMainClassName
+
+> Task :bootRun
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.3.2)
+
+2026-08-26T19:44:11.571+09:00  INFO 14152 --- [           main] c.j.autotrading.AutoTradingApplication   : Starting AutoTradingApplication using Java 21.0.2 with PID 14152 (D:\workspace\auto_trading\backend\build\classes\java\main started by xenolancer in D:\workspace\auto_trading\backend)
+2026-08-26T19:44:11.572+09:00  INFO 14152 --- [           main] c.j.autotrading.AutoTradingApplication   : No active profile set, falling back to 1 default profile: "default"
+2026-08-26T19:44:12.160+09:00  INFO 14152 --- [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8081 (http)
+2026-08-26T19:44:12.168+09:00  INFO 14152 --- [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-08-26T19:44:12.168+09:00  INFO 14152 --- [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.26]
+2026-08-26T19:44:12.208+09:00  INFO 14152 --- [           main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-08-26T19:44:12.208+09:00  INFO 14152 --- [           main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 614 ms
+2026-08-26T19:44:12.739+09:00  INFO 14152 --- [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8081 (http) with context path '/'
+2026-08-26T19:44:12.744+09:00  INFO 14152 --- [           main] c.j.autotrading.AutoTradingApplication   : Started AutoTradingApplication in 1.355 seconds (process running for 1.562)

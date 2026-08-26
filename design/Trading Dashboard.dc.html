@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="stylesheet" href="_ds/organic-b86fc27e-e60e-4c04-9da7-50a41fa7abfd/styles.css">
+  <script src="_ds/organic-b86fc27e-e60e-4c04-9da7-50a41fa7abfd/_ds_bundle.js"></script>
+  <style>
+    :root {
+      --color-bg: #ffffff;
+      --color-surface: #f3f6fb;
+      --color-text: #142033;
+      --color-divider: color-mix(in srgb, #142033 14%, transparent);
+      --color-neutral-100: #f4f6fa; --color-neutral-200: #e7ebf2; --color-neutral-300: #d3dae6;
+      --color-neutral-400: #b0bccd; --color-neutral-500: #8b99b0; --color-neutral-600: #6b7a94;
+      --color-neutral-700: #505d75; --color-neutral-800: #38435a; --color-neutral-900: #212a3d;
+      --color-accent: #3d78f0;
+      --color-accent-100: #eaf1ff; --color-accent-200: #cfe0ff; --color-accent-300: #9fc2ff;
+      --color-accent-400: #6b9dfa; --color-accent-500: #3d78f0; --color-accent-600: #2f5fcf;
+      --color-accent-700: #2549a8; --color-accent-800: #1c3980; --color-accent-900: #142a5c;
+      --color-accent-2: #5567b8;
+      --color-accent-2-100: #eceffb; --color-accent-2-200: #d3daf3; --color-accent-2-300: #aab8e6;
+      --color-accent-2-400: #7d8fd2; --color-accent-2-500: #5567b8; --color-accent-2-600: #445299;
+      --color-accent-2-700: #35407a; --color-accent-2-800: #262e59; --color-accent-2-900: #181d3a;
+      --shadow-sm: 0 1px 2px color-mix(in srgb, #142033 14%, transparent);
+      --shadow-md: 0 3px 10px color-mix(in srgb, #142033 16%, transparent);
+      --shadow-lg: 0 12px 32px color-mix(in srgb, #142033 22%, transparent);
+    }
+    body { margin: 0; background: var(--color-bg); }
+    a { color: var(--color-accent-700); text-decoration: none; }
+    a:hover { color: var(--color-accent-900); text-decoration: underline; }
+    .panel { border: 1px solid var(--color-divider); }
+    .eyebrow { font-size: 13px; letter-spacing: 0.04em; color: var(--color-neutral-700); font-weight: 600; margin: 0 0 var(--space-2); }
+    .icon-badge { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none; }
+    .metric-num { font-family: var(--font-heading); font-size: 26px; color: var(--color-text); line-height: 1; }
+    .metric-label { font-size: 13px; color: var(--color-neutral-700); }
+    .metric-sub { font-size: 12px; color: var(--color-neutral-600); }
+    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); padding: var(--space-8) var(--space-4); color: var(--color-neutral-700); text-align: center; font-size: 14px; }
+    .app-nav { padding: var(--space-4) clamp(var(--space-4), 5vw, var(--space-8)); flex-wrap: wrap; }
+    .app-main { max-width: 1080px; margin: 0 auto; padding: clamp(var(--space-5), 4vw, var(--space-8)) clamp(var(--space-4), 5vw, var(--space-8)) var(--space-4); display: flex; flex-direction: column; gap: clamp(var(--space-6), 4vw, var(--space-8)); }
+    .stat-grid, .pipeline-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4); }
+    .split-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); }
+    .stat-card { padding: var(--space-5); flex-direction: row; align-items: center; gap: var(--space-4); }
+    @media (max-width: 860px) {
+      .stat-grid, .pipeline-grid { grid-template-columns: 1fr; }
+      .split-grid { grid-template-columns: 1fr; }
+    }
+    .tab-bar { display: flex; gap: var(--space-1); padding: 4px; background: var(--color-bg); border: 1px solid var(--color-divider); border-radius: 999px; width: fit-content; }
+    .tab-btn { font: inherit; font-size: 13px; font-weight: 600; border: none; cursor: pointer; padding: var(--space-2) var(--space-4); border-radius: 999px; }
+    @media (max-width: 520px) {
+      .tab-bar { width: 100%; }
+      .tab-btn { flex: 1; }
+      .app-nav { padding: var(--space-3) var(--space-4); }
+      .nav-brand { font-size: 18px !important; }
+      .metric-num { font-size: 22px; }
+    }
+  </style>
+</helmet>
+
+<div style="min-height: 100vh; font-family: var(--font-body); padding-bottom: var(--space-8);">
+
+  <nav class="nav panel app-nav" style="justify-content: space-between; background: var(--color-surface); border-radius: 0 0 var(--radius-lg) var(--radius-lg);">
+    <div style="display: flex; align-items: center; gap: var(--space-3);">
+      <div class="icon-badge" style="width: 40px; height: 40px; background: var(--color-accent-2-100); color: var(--color-accent-2-800);">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>
+      </div>
+      <span class="nav-brand" style="font-family: var(--font-heading); font-size: 22px; margin-right: 0;">모의투자 대시보드</span>
+      <span class="tag tag-accent-2">자동매매 · 모의</span>
+    </div>
+    <button class="btn btn-primary" style="background: var(--color-accent-900); border-color: var(--color-accent-900); display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); font-weight: 700;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+      긴급정지
+    </button>
+  </nav>
+
+  <main class="app-main">
+
+    <section>
+      <p class="eyebrow">지금 상태</p>
+      <div class="stat-grid">
+        <div class="card elev-sm panel stat-card">
+          <div class="icon-badge" style="background: var(--color-neutral-100); color: var(--color-neutral-700);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 7.65L12 21l8.42-8.77a5.4 5.4 0 0 0 0-7.65Z" opacity="0"></path><path d="M12 2 2 7l10 5 10-5-10-5Z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
+          </div>
+          <div>
+            <div class="metric-label">보유 포지션</div>
+            <div class="metric-num" style="font-size: 20px;">보유 종목 없음</div>
+          </div>
+        </div>
+        <div class="card elev-sm panel stat-card">
+          <div class="icon-badge" style="background: var(--color-accent-2-100); color: var(--color-accent-2-800);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"></path></svg>
+          </div>
+          <div style="flex: 1;">
+            <div class="metric-label">일일 손실 한도 대비</div>
+            <div class="metric-num">0%</div>
+            <div style="height: 6px; margin-top: var(--space-2); border-radius: 999px; background: var(--color-accent-2-100); overflow: hidden;">
+              <div style="height: 100%; width: 0%; background: var(--color-accent-2-600); border-radius: 999px;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="card elev-sm panel stat-card">
+          <div class="icon-badge" style="background: var(--color-neutral-100); color: var(--color-neutral-700);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M7 15v-5"></path><path d="M12 15V7"></path><path d="M17 15v-3"></path></svg>
+          </div>
+          <div>
+            <div class="metric-label">평가금액 (오늘)</div>
+            <div class="metric-num">10,000,000</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card elev-sm panel" style="padding: var(--space-6); gap: var(--space-5);">
+      <div>
+        <p class="eyebrow" style="margin-bottom: var(--space-1);">시세/피처 수집 현황</p>
+        <div class="card-title" style="font-size: 22px;">데이터 파이프라인</div>
+      </div>
+
+      <div class="pipeline-grid">
+        <div style="display: flex; align-items: flex-start; gap: var(--space-3);">
+          <div class="icon-badge" style="width: 44px; height: 44px; background: var(--color-neutral-100); color: var(--color-neutral-700);">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
+          </div>
+          <div>
+            <div class="metric-label">매매 유니버스</div>
+            <div class="metric-num">0 / 0</div>
+            <div class="metric-sub">활성 / 전체 종목</div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: flex-start; gap: var(--space-3);">
+          <div class="icon-badge" style="width: 44px; height: 44px; background: var(--color-neutral-100); color: var(--color-neutral-700);">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>
+          </div>
+          <div>
+            <div class="metric-label">시세 데이터</div>
+            <div class="metric-num">0건</div>
+            <div class="metric-sub">0종목 · 마지막 수집 -</div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: flex-start; gap: var(--space-3);">
+          <div class="icon-badge" style="width: 44px; height: 44px; background: var(--color-neutral-100); color: var(--color-neutral-700);">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10"></path><path d="M12 6v6l4 2"></path><path d="M18 2l2 2-2 2"></path></svg>
+          </div>
+          <div>
+            <div class="metric-label">AI 피처</div>
+            <div class="metric-num">0건</div>
+            <div class="metric-sub">0종목 · 마지막 산출일 -</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="background: var(--color-accent-2-100); border-radius: var(--radius-md); padding: var(--space-4); font-size: 13px; color: var(--color-accent-2-800); line-height: 1.6; display: flex; gap: var(--space-3); align-items: flex-start;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" style="flex: none; margin-top: 1px;"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+        <span>아직 수집된 시세가 없습니다 — 장전 유니버스 선정(08:00)과 시세/피처 수집 배치(16:00, 평일)가 한 번은 지나야 채워집니다.</span>
+      </div>
+    </section>
+
+    <section class="card elev-sm panel" style="padding: var(--space-6); gap: var(--space-4);">
+      <div style="display: flex; align-items: baseline; justify-content: space-between;">
+        <div>
+          <p class="eyebrow" style="margin-bottom: var(--space-1);">계좌 스냅샷 추이</p>
+          <div class="card-title" style="font-size: 22px;">일별 자산 현황</div>
+        </div>
+      </div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>일자</th>
+            <th>평가금액</th>
+            <th>현금</th>
+            <th>당일손익</th>
+            <th>손익률</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>2026-08-25</td>
+            <td>10,000,000</td>
+            <td>10,000,000</td>
+            <td>0</td>
+            <td>0.00%</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card elev-sm panel" style="padding: var(--space-6); gap: var(--space-4);">
+      <div class="tab-bar" role="tablist">
+        <button type="button" class="tab-btn" data-active="{{ isOrdersTab }}" style="{{ ordersTabStyle }}" onClick="{{ selectOrdersTab }}">주문/체결 이력</button>
+        <button type="button" class="tab-btn" data-active="{{ isRiskTab }}" style="{{ riskTabStyle }}" onClick="{{ selectRiskTab }}">리스크 이벤트 로그</button>
+      </div>
+
+      <sc-if value="{{ isOrdersTab }}" hint-placeholder-val="{{ true }}">
+        <div class="empty-state">
+          <div class="icon-badge" style="width: 56px; height: 56px; background: var(--color-neutral-100); color: var(--color-neutral-600);">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"></path></svg>
+          </div>
+          <span>아직 주문 이력이 없습니다</span>
+        </div>
+      </sc-if>
+      <sc-if value="{{ isRiskTab }}" hint-placeholder-val="{{ false }}">
+        <div class="empty-state">
+          <div class="icon-badge" style="width: 56px; height: 56px; background: var(--color-accent-2-100); color: var(--color-accent-2-800);">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1Z"></path><path d="m9 12 2 2 4-4"></path></svg>
+          </div>
+          <span>아직 리스크 이벤트가 없습니다 — 모든 안전 장치가 정상 대기 중입니다</span>
+        </div>
+      </sc-if>
+    </section>
+
+  </main>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { tab: 'orders' };
+  tabStyle(active) {
+    return active
+      ? 'background: var(--color-accent-900); color: var(--color-bg);'
+      : 'background: transparent; color: var(--color-neutral-700);';
+  }
+  renderVals() {
+    const isOrdersTab = this.state.tab === 'orders';
+    const isRiskTab = this.state.tab === 'risk';
+    return {
+      isOrdersTab,
+      isRiskTab,
+      ordersTabStyle: this.tabStyle(isOrdersTab),
+      riskTabStyle: this.tabStyle(isRiskTab),
+      selectOrdersTab: () => this.setState({ tab: 'orders' }),
+      selectRiskTab: () => this.setState({ tab: 'risk' }),
+    };
+  }
+}
+</script>
+</body>
+</html>

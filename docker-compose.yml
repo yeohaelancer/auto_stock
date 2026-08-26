@@ -2,24 +2,15 @@
 # Stock auto-trading system local/dev orchestration
 # 시크릿은 모두 .env 파일(레포에 커밋하지 않음)에서 주입한다. Secrets are all injected from an untracked .env file.
 
-services:
-  postgres:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: ${DB_NAME:-autotrading}
-      POSTGRES_USER: ${DB_USER:-autotrading}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./docs/agents/dba/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-autotrading}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+# DB는 컨테이너로 띄우지 않는다 — PC에 이미 설치된 MySQL(JDWORKS DB)을 그대로 사용한다.
+# host.docker.internal은 Docker Desktop(Windows/Mac)에서 컨테이너가 호스트 PC에 접속할 때 쓰는 주소.
+# schema.sql은 docs/agents/dba/schema.sql을 mysql 클라이언트로 한 번 실행해 직접 적용할 것.
+#
+# No DB container here — connects directly to the MySQL (JDWORKS DB) already installed on this PC.
+# host.docker.internal is how a container reaches the host PC under Docker Desktop (Windows/Mac).
+# Apply docs/agents/dba/schema.sql once via the mysql client yourself before first run.
 
+services:
   redis:
     image: redis:7-alpine
     ports:
@@ -28,18 +19,15 @@ services:
   ml-service:
     build: ./ml-service
     environment:
-      # feature_daily 읽기 전용 조회용 — ml-service는 자체 별도 자격증명으로 접속한다 (Review 산출물 참고).
-      # Read-only feature_daily lookups — ml-service connects with its own separate credentials (see Review output).
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${DB_NAME:-autotrading}
-      DB_USER: ${DB_USER:-autotrading}
-      DB_PASSWORD: ${DB_PASSWORD}
+      # trading_feature_daily 읽기 전용 조회용 — ml-service는 자체 별도 자격증명으로 접속한다 (Review 산출물 참고).
+      # Read-only trading_feature_daily lookups — ml-service connects with its own separate credentials (see Review output).
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME:-JDWORKS}
+      DB_USER: ${DB_USER:-jdwadmin}
+      DB_PASSWORD: ${DB_PASSWORD:-!jdwadmin}
     ports:
       - "8001:8001"
-    depends_on:
-      postgres:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 15s
@@ -51,24 +39,29 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${DB_NAME:-autotrading}
-      DB_USER: ${DB_USER:-autotrading}
-      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME:-JDWORKS}
+      DB_USER: ${DB_USER:-jdwadmin}
+      DB_PASSWORD: ${DB_PASSWORD:-!jdwadmin}
       TRADING_MODE: ${TRADING_MODE:-MOCK}
       KIWOOM_BASE_URL: ${KIWOOM_BASE_URL}
       KIWOOM_APP_KEY: ${KIWOOM_APP_KEY}
       KIWOOM_APP_SECRET: ${KIWOOM_APP_SECRET}
       KIWOOM_ACCOUNT_NO: ${KIWOOM_ACCOUNT_NO}
       PREDICTION_SERVICE_URL: http://ml-service:8001
+      SERVER_PORT: 8081
     ports:
-      - "8080:8080"
+      - "8081:8081"
     depends_on:
-      postgres:
-        condition: service_healthy
       ml-service:
         condition: service_healthy
 
-volumes:
-  pgdata:
+  frontend:
+    # 단독 실행형 Vue 앱 — JD WORK 등 외부 호스트 대시보드 없이 이 서비스만으로 UI가 뜬다.
+    # Standalone Vue app — the UI comes up from this service alone, no external host dashboard (e.g. JD WORK) needed.
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jdwork.autotrading.market.mapper.MarketStatusMapper">
+
+    <select id="findCollectionStatus" resultType="com.jdwork.autotrading.market.dto.CollectionStatus">
+        SELECT
+            (SELECT COUNT(*) FROM trading_price_history WHERE deleted_at IS NULL) AS priceHistoryCount,
+            (SELECT COUNT(DISTINCT stock_code) FROM trading_price_history WHERE deleted_at IS NULL) AS priceHistoryStockCount,
+            (SELECT MAX(trade_datetime) FROM trading_price_history WHERE deleted_at IS NULL) AS priceHistoryLastCollectedAt,
+            (SELECT COUNT(*) FROM trading_feature_daily WHERE deleted_at IS NULL) AS featureDailyCount,
+            (SELECT COUNT(DISTINCT stock_code) FROM trading_feature_daily WHERE deleted_at IS NULL) AS featureDailyStockCount,
+            (SELECT MAX(base_date) FROM trading_feature_daily WHERE deleted_at IS NULL) AS featureDailyLastBaseDate,
+            (SELECT COUNT(*) FROM trading_stock_master WHERE deleted_at IS NULL) AS universeTotalCount,
+            (SELECT COUNT(*) FROM trading_stock_master WHERE deleted_at IS NULL AND is_managed = FALSE AND is_trading_halt = FALSE) AS universeActiveCount
+    </select>
+
+</mapper>

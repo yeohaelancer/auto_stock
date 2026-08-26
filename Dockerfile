@@ -12,5 +12,5 @@ WORKDIR /app
 # 시크릿(앱키/시크릿키/계좌번호)은 이미지에 절대 포함하지 않고 런타임 환경변수로만 주입
 # Secrets (app key/secret/account number) are never baked into the image — injected only via runtime env vars
 COPY --from=build /workspace/build/libs/*.jar app.jar
-EXPOSE 8080
+EXPOSE 8081
 ENTRYPOINT ["java", "-jar", "app.jar"]

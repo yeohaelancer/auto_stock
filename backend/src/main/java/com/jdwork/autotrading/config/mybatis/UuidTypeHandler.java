@@ -12,8 +12,10 @@ import java.sql.SQLException;
 import java.util.UUID;
 
 /**
- * java.util.UUID ↔ PostgreSQL UUID(JDBC OTHER) 컬럼 매핑용 MyBatis 타입 핸들러.
- * MyBatis type handler mapping java.util.UUID to/from PostgreSQL's UUID column (JDBC type OTHER).
+ * java.util.UUID ↔ MySQL CHAR(36) 컬럼 매핑용 MyBatis 타입 핸들러.
+ * MySQL에는 PostgreSQL과 달리 네이티브 UUID 타입이 없어 문자열(CHAR(36))로 저장한다.
+ * MyBatis type handler mapping java.util.UUID to/from a MySQL CHAR(36) column.
+ * Unlike PostgreSQL, MySQL has no native UUID type, so it's stored as a string (CHAR(36)).
  *
  * 실제 기동 테스트 중 발견: 이 핸들러 없이는 UUID 파라미터를 쓰는 매퍼 XML이 파싱 단계에서 실패한다
  * ("Type handler was null on parameter mapping ... javaType java.util.UUID : jdbcType null").
@@ -23,29 +25,29 @@ import java.util.UUID;
  * This package is registered via application.yml's mybatis.type-handlers-package for global use.
  */
 @MappedTypes(UUID.class)
-@MappedJdbcTypes(JdbcType.OTHER)
+@MappedJdbcTypes(JdbcType.CHAR)
 public class UuidTypeHandler extends BaseTypeHandler<UUID> {
 
     @Override
     public void setNonNullParameter(PreparedStatement ps, int i, UUID parameter, JdbcType jdbcType) throws SQLException {
-        ps.setObject(i, parameter, java.sql.Types.OTHER);
+        ps.setString(i, parameter.toString());
     }
 
     @Override
     public UUID getNullableResult(ResultSet rs, String columnName) throws SQLException {
-        Object value = rs.getObject(columnName);
-        return value == null ? null : UUID.fromString(value.toString());
+        String value = rs.getString(columnName);
+        return value == null ? null : UUID.fromString(value);
     }
 
     @Override
     public UUID getNullableResult(ResultSet rs, int columnIndex) throws SQLException {
-        Object value = rs.getObject(columnIndex);
-        return value == null ? null : UUID.fromString(value.toString());
+        String value = rs.getString(columnIndex);
+        return value == null ? null : UUID.fromString(value);
     }
 
     @Override
     public UUID getNullableResult(CallableStatement cs, int columnIndex) throws SQLException {
-        Object value = cs.getObject(columnIndex);
-        return value == null ? null : UUID.fromString(value.toString());
+        String value = cs.getString(columnIndex);
+        return value == null ? null : UUID.fromString(value);
     }
 }

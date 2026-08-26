@@ -13,6 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -69,6 +70,20 @@ public class KiwoomMarketRestClient implements KiwoomMarketClient {
     /** 무한루프 방지용 안전판 — count가 아무리 커도 이 페이지 수를 넘기지 않는다. Safety cap against a runaway loop, regardless of how large count is. */
     private static final int MAX_PAGES = 50;
 
+    /**
+     * 429 재시도 횟수/대기시간 — 실운영 중 발견: 새 JVM에서 첫 호출 시 접근토큰 발급(KiwoomTokenClient,
+     * 이쪽은 별도 레이트리밋이 없음) 직후 곧바로 이 클라이언트의 첫 시세 호출이 나가면서 두 요청이
+     * 초당 한도 없이 거의 동시에 나가 429가 나는 사례를 확인. 재시도로 흡수한다(원인을 완전히 없애기보다,
+     * 일시적 429는 항상 있을 수 있다고 보고 방어적으로 재시도하는 편이 더 견고함).
+     * 429 retry count/backoff — found in real operation: on a fresh JVM's very first call, access-token
+     * issuance (KiwoomTokenClient, which has no rate limiting of its own) fires immediately followed by
+     * this client's first price request, with no gap enforced between the two — occasionally tripping
+     * 429. Retrying absorbs this (more robust than trying to eliminate every possible collision — a
+     * transient 429 can always happen for other reasons too).
+     */
+    private static final int MAX_429_RETRIES = 2;
+    private static final long RETRY_BACKOFF_MILLIS = 1500L;
+
     private final WebClient webClient;
     private final KiwoomTokenClient tokenClient;
     private final Bucket rateLimiter;
@@ -114,46 +129,62 @@ public class KiwoomMarketRestClient implements KiwoomMarketClient {
         String contYn = null;
         String nextKey = null;
 
+        pageLoop:
         for (int page = 0; page < MAX_PAGES && collected.size() < count; page++) {
-            try {
-                rateLimiter.asBlocking().consume(1); // 종목/페이지 호출 사이 초당 요청 한도 대기 (block until under the per-second cap)
+            for (int attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
+                try {
+                    rateLimiter.asBlocking().consume(1); // 종목/페이지 호출 사이 초당 요청 한도 대기 (block until under the per-second cap)
 
-                WebClient.RequestBodySpec request = webClient.post()
-                        .uri(DAILY_PRICE_PATH)
-                        .header("authorization", "Bearer " + tokenClient.getAccessToken())
-                        .header("api-id", DAILY_PRICE_TR)
-                        .contentType(MediaType.valueOf("application/json;charset=UTF-8"));
-                if (nextKey != null) {
-                    // 첫 페이지는 이 헤더들을 빼고 보낸다 — 이어서 받을 페이지가 없을 때부터만 붙인다
-                    // Omit these on the first page — only attach once there's an actual page to continue from
-                    request = request.header(CONT_YN_HEADER, "Y").header(NEXT_KEY_HEADER, nextKey);
+                    WebClient.RequestBodySpec request = webClient.post()
+                            .uri(DAILY_PRICE_PATH)
+                            .header("authorization", "Bearer " + tokenClient.getAccessToken())
+                            .header("api-id", DAILY_PRICE_TR)
+                            .contentType(MediaType.valueOf("application/json;charset=UTF-8"));
+                    if (nextKey != null) {
+                        // 첫 페이지는 이 헤더들을 빼고 보낸다 — 이어서 받을 페이지가 없을 때부터만 붙인다
+                        // Omit these on the first page — only attach once there's an actual page to continue from
+                        request = request.header(CONT_YN_HEADER, "Y").header(NEXT_KEY_HEADER, nextKey);
+                    }
+
+                    ResponseEntity<DailyPriceResponse> response = request
+                            .bodyValue(new DailyPriceRequest(stockCode, queryDate, "0"))
+                            .retrieve()
+                            .toEntity(DailyPriceResponse.class)
+                            .block();
+
+                    if (response == null || response.getBody() == null || response.getBody().dalyStkpc() == null) {
+                        break pageLoop;
+                    }
+
+                    response.getBody().dalyStkpc().stream()
+                            .map(entry -> toPriceBar(stockCode, entry))
+                            .filter(Objects::nonNull)
+                            .forEach(collected::add);
+
+                    contYn = response.getHeaders().getFirst(CONT_YN_HEADER);
+                    nextKey = response.getHeaders().getFirst(NEXT_KEY_HEADER);
+                    break; // 이 페이지 성공 — 재시도 루프 탈출하고 다음 페이지로 (this page succeeded — leave the retry loop, move to the next page)
+                } catch (WebClientResponseException.TooManyRequests e) {
+                    if (attempt == MAX_429_RETRIES) {
+                        log.error("키움 일별주가 조회 실패(429, 재시도 {}회 소진) — {} 종목, {}번째 페이지 "
+                                        + "(Kiwoom daily price lookup failed: 429, {} retries exhausted — {}, page {})",
+                                MAX_429_RETRIES, stockCode, page, MAX_429_RETRIES, stockCode, page);
+                        break pageLoop;
+                    }
+                    log.warn("429 응답 — {}ms 대기 후 재시도 ({}/{}) — {} 종목, {}번째 페이지 "
+                                    + "(429 response — retrying in {}ms ({}/{}) — {}, page {})",
+                            RETRY_BACKOFF_MILLIS, attempt + 1, MAX_429_RETRIES, stockCode, page,
+                            RETRY_BACKOFF_MILLIS, attempt + 1, MAX_429_RETRIES, stockCode, page);
+                    sleepUninterruptibly(RETRY_BACKOFF_MILLIS);
+                } catch (Exception e) {
+                    // 조회 실패 시 절대 임의 값으로 대체하지 않는다 (설계 §10) — 다만 이전 페이지에서 이미
+                    // 실제로 받아온 데이터는 조작된 값이 아니므로 폐기하지 않고 그대로 반환한다.
+                    // Never fabricate a value on failure (design doc §10) — but real bars already fetched in
+                    // earlier pages aren't fabricated, so they're kept and returned rather than discarded.
+                    log.error("키움 일별주가 조회 실패 — {} 종목, {}번째 페이지 (Kiwoom daily price lookup failed for {}, page {})",
+                            stockCode, page, stockCode, page, e);
+                    break pageLoop;
                 }
-
-                ResponseEntity<DailyPriceResponse> response = request
-                        .bodyValue(new DailyPriceRequest(stockCode, queryDate, "0"))
-                        .retrieve()
-                        .toEntity(DailyPriceResponse.class)
-                        .block();
-
-                if (response == null || response.getBody() == null || response.getBody().dalyStkpc() == null) {
-                    break;
-                }
-
-                response.getBody().dalyStkpc().stream()
-                        .map(entry -> toPriceBar(stockCode, entry))
-                        .filter(Objects::nonNull)
-                        .forEach(collected::add);
-
-                contYn = response.getHeaders().getFirst(CONT_YN_HEADER);
-                nextKey = response.getHeaders().getFirst(NEXT_KEY_HEADER);
-            } catch (Exception e) {
-                // 조회 실패 시 절대 임의 값으로 대체하지 않는다 (설계 §10) — 다만 이전 페이지에서 이미
-                // 실제로 받아온 데이터는 조작된 값이 아니므로 폐기하지 않고 그대로 반환한다.
-                // Never fabricate a value on failure (design doc §10) — but real bars already fetched in
-                // earlier pages aren't fabricated, so they're kept and returned rather than discarded.
-                log.error("키움 일별주가 조회 실패 — {} 종목, {}번째 페이지 (Kiwoom daily price lookup failed for {}, page {})",
-                        stockCode, page, stockCode, page, e);
-                break;
             }
 
             if (!"Y".equalsIgnoreCase(contYn) || nextKey == null || nextKey.isBlank()) {
@@ -165,6 +196,16 @@ public class KiwoomMarketRestClient implements KiwoomMarketClient {
                 .sorted(Comparator.comparing(PriceBar::tradeDateTime).reversed()) // 응답 정렬 순서를 가정하지 않고 직접 최신순 정렬
                 .limit(count)
                 .toList();
+    }
+
+    /** 429 재시도 대기용 — 인터럽트되면 그냥 조기 반환한다(재시도가 한 번 덜 되는 것뿐, 안전). */
+    /** Sleep for the 429 retry backoff — on interrupt, just returns early (one fewer retry, harmless). */
+    private void sleepUninterruptibly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private PriceBar toPriceBar(String stockCode, DailyPriceEntry entry) {

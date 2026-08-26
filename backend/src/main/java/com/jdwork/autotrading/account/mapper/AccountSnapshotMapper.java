@@ -4,6 +4,8 @@ import com.jdwork.autotrading.account.domain.AccountSnapshot;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.List;
+
 /**
  * account_snapshot 테이블 MyBatis 매퍼.
  * MyBatis mapper for the account_snapshot table.
@@ -29,4 +31,12 @@ public interface AccountSnapshotMapper {
      * safe even if the scheduler re-runs on the same day.
      */
     void upsert(AccountSnapshot snapshot);
+
+    /**
+     * 최근 스냅샷을 날짜 최신순으로 N건 조회한다 — 손익 추이 화면용.
+     * Fetch the most recent N snapshots, newest first — for the PnL trend view.
+     */
+    List<AccountSnapshot> findHistory(@Param("accountId") String accountId,
+                                       @Param("tradingMode") String tradingMode,
+                                       @Param("limit") int limit);
 }

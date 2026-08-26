@@ -25,6 +25,22 @@ public class RiskEvent {
         this.occurredAt = OffsetDateTime.now();
     }
 
+    /**
+     * DB 조회 결과를 그대로 복원하기 위한 생성자 — MyBatis resultMap의 &lt;constructor&gt;가 사용한다
+     * (occurredAt/riskLogId를 now()/null로 덮어쓰지 않고 저장된 값 그대로 채워야 하므로 위 생성자와 분리).
+     * Reconstruction constructor used by MyBatis resultMap's &lt;constructor&gt; (kept separate from the
+     * constructor above so occurredAt/riskLogId are restored from the DB, not overwritten with now()/null).
+     */
+    public RiskEvent(Long riskLogId, EventType eventType, OffsetDateTime occurredAt,
+                      String accountId, String tradingMode, String actionTaken) {
+        this.riskLogId = riskLogId;
+        this.eventType = eventType;
+        this.occurredAt = occurredAt;
+        this.accountId = accountId;
+        this.tradingMode = tradingMode;
+        this.actionTaken = actionTaken;
+    }
+
     public Long getRiskLogId() { return riskLogId; }
     public void setRiskLogId(Long riskLogId) { this.riskLogId = riskLogId; }
     public EventType getEventType() { return eventType; }

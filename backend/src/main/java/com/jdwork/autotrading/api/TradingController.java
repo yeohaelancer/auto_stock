@@ -1,7 +1,9 @@
 package com.jdwork.autotrading.api;
 
 import com.jdwork.autotrading.account.AccountService;
+import com.jdwork.autotrading.account.domain.AccountSnapshot;
 import com.jdwork.autotrading.account.domain.Position;
+import com.jdwork.autotrading.account.mapper.AccountSnapshotMapper;
 import com.jdwork.autotrading.config.KiwoomApiProperties;
 import com.jdwork.autotrading.config.TradingModeConfig;
 import com.jdwork.autotrading.order.OrderService;
@@ -9,6 +11,7 @@ import com.jdwork.autotrading.order.domain.OrderLog;
 import com.jdwork.autotrading.risk.RiskEngine;
 import com.jdwork.autotrading.risk.domain.RiskEvent;
 import com.jdwork.autotrading.risk.mapper.RiskEventMapper;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,13 +20,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 /**
- * JD WORK 대시보드 자동매매 위젯용 REST 컨트롤러.
- * REST controller backing the JD WORK dashboard auto-trading widget.
+ * 자동매매 위젯(단독 실행 프론트엔드)용 REST 컨트롤러.
+ * REST controller backing the auto-trading widget (standalone frontend).
  *
  * Review Agent 지적사항 반영: 긴급정지는 리스크 엔진 상태 전환 + risk_log 기록을 원자적으로 처리한다.
  * Addresses Review Agent finding: emergency stop atomically flips risk engine state and records risk_log.
@@ -36,29 +40,53 @@ public class TradingController {
     private final AccountService accountService;
     private final OrderService orderService;
     private final RiskEventMapper riskEventMapper;
+    private final AccountSnapshotMapper accountSnapshotMapper;
     private final TradingModeConfig tradingModeConfig;
     private final KiwoomApiProperties kiwoomApiProperties;
+    private final BigDecimal dailyLossLimitRate;
 
     public TradingController(RiskEngine riskEngine,
                               AccountService accountService,
                               OrderService orderService,
                               RiskEventMapper riskEventMapper,
+                              AccountSnapshotMapper accountSnapshotMapper,
                               TradingModeConfig tradingModeConfig,
-                              KiwoomApiProperties kiwoomApiProperties) {
+                              KiwoomApiProperties kiwoomApiProperties,
+                              @Value("${trading.risk.daily-loss-limit-rate}") BigDecimal dailyLossLimitRate) {
         this.riskEngine = riskEngine;
         this.accountService = accountService;
         this.orderService = orderService;
         this.riskEventMapper = riskEventMapper;
+        this.accountSnapshotMapper = accountSnapshotMapper;
         this.tradingModeConfig = tradingModeConfig;
         this.kiwoomApiProperties = kiwoomApiProperties;
+        this.dailyLossLimitRate = dailyLossLimitRate;
     }
 
-    /** 현재 모드/긴급정지 상태 조회 — ModeBadge, TradingToggleSwitch 컴포넌트용. */
+    /**
+     * 현재 모드/긴급정지/리스크 상태 조회 — ModeBadge, RiskGauge 컴포넌트용.
+     * Current mode/emergency-stop/risk state — for the ModeBadge and RiskGauge components.
+     *
+     * ⚠️ 계좌 스냅샷이 아직 없으면(배포 첫날 등) currentLossRate는 0으로 내려간다 — 임의값을 지어내지
+     * 않는다는 원칙(설계 §10)에 따른 것으로, "손실 없음"이 아니라 "아직 알 수 없음"을 뜻한다.
+     * ⚠️ If no account snapshot exists yet (e.g. deployment day 1), currentLossRate reports 0 — per the
+     * "never fabricate a value" principle (design doc §10). This means "not yet known", not "no loss".
+     */
     @GetMapping("/status")
     public Map<String, Object> getStatus() {
+        AccountSnapshot latest = accountSnapshotMapper.findLatest(
+                kiwoomApiProperties.getAccountNo(), tradingModeConfig.getMode().name());
+        BigDecimal currentLossRate = (latest == null || latest.getDailyPnlRate().signum() >= 0)
+                ? BigDecimal.ZERO
+                : latest.getDailyPnlRate().negate().setScale(4, RoundingMode.HALF_UP);
+
         return Map.of(
                 "mode", tradingModeConfig.getMode(),
-                "emergencyStopped", riskEngine.isEmergencyStopped()
+                "emergencyStopped", riskEngine.isEmergencyStopped(),
+                "riskState", Map.of(
+                        "currentLossRate", currentLossRate,
+                        "dailyLimitRate", dailyLossLimitRate
+                )
         );
     }
 
