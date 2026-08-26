@@ -321,10 +321,20 @@ public class TradingScheduler {
      *
      * postMarketJob(15:40) 이후에 실행해 당일 체결이 반영된 종가를 사용한다.
      * Runs after postMarketJob (15:40) so the day's close reflects the day's actual trading.
+     *
+     * ⚠️ findActiveUniverse()(거래정지 제외)가 아니라 findCollectionUniverse()(관리종목만 제외)를 쓴다 —
+     * 신규/거래정지 종목도 시세를 계속 받아야 preMarketJob의 markActiveAsResumed가 해제할 수 있기 때문
+     * (findActiveUniverse()를 썼을 때: 신규 종목은 시세가 없어 즉시 거래정지 마킹 → 거래정지라 시세 수집 제외
+     * → 영원히 시세를 못 받음 → 영원히 거래정지 해제 불가, 라는 순환 잠김 버그가 있었음 — 실운영 중 발견).
+     * ⚠️ Uses findCollectionUniverse() (managed-only exclusion), not findActiveUniverse() (halt-excluded) —
+     * new/halted stocks still need price collected so preMarketJob's markActiveAsResumed can un-flag them
+     * (using findActiveUniverse() here caused a deadlock found in real operation: a new stock has no price
+     * yet, so it gets marked halted immediately, which then excludes it from collection, so it never gets
+     * price, so it can never be un-flagged).
      */
     @Scheduled(cron = "0 0 16 * * MON-FRI", zone = "Asia/Seoul")
     public void collectPriceHistoryAndFeatures() {
-        List<String> universe = stockMasterMapper.findActiveUniverse();
+        List<String> universe = stockMasterMapper.findCollectionUniverse();
         log.info("시세/피처 수집 배치 시작: {}종목 (price/feature collection starting for {} stocks)",
                 universe.size(), universe.size());
 

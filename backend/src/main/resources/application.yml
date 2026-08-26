@@ -8,11 +8,17 @@ logging:
     console: UTF-8
     file: UTF-8
 
+server:
+  port: ${SERVER_PORT:8081}
+
 spring:
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:autotrading}
-    username: ${DB_USER:autotrading}
-    password: ${DB_PASSWORD:} # 반드시 환경변수로 주입 (must be injected via environment variable)
+    # PC에 이미 설치된 MySQL 인스턴스를 사용 — 기본값은 로컬 개발용, 운영 시 환경변수로 재정의 가능
+    # Uses the MySQL instance already installed on this PC — defaults are for local dev, override via env vars in production
+    url: "jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:JDWORKS}?serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8"
+    username: ${DB_USER:jdwadmin}
+    password: "${DB_PASSWORD:!jdwadmin}" # 반드시 환경변수로 주입 권장 (recommended to inject via environment variable)
+    driver-class-name: com.mysql.cj.jdbc.Driver
 
 mybatis:
   mapper-locations: classpath:mapper/*.xml
@@ -29,6 +35,12 @@ trading:
     app-key: ${KIWOOM_APP_KEY:}
     app-secret: ${KIWOOM_APP_SECRET:}
     account-no: ${KIWOOM_ACCOUNT_NO:}
+    # 종목별 반복 호출(일별주가 등)에 대한 초당 요청 한도 — 실측 결과, 미적용 시 20종목 연속 호출만으로도
+    # 429 Too Many Requests 발생 (bucket4j, KiwoomMarketRestClient). 값 근거 없음 — 운영 중 조정 필요.
+    # Per-second request cap for repeated per-stock calls (e.g. daily price) — observed in practice that
+    # firing 20 stocks back-to-back with no limit alone triggers 429 Too Many Requests (bucket4j, in
+    # KiwoomMarketRestClient). Not backed by an official published limit — tune based on real usage.
+    rate-limit-per-second: ${KIWOOM_RATE_LIMIT_PER_SECOND:4}
   risk:
     daily-loss-limit-rate: ${DAILY_LOSS_LIMIT_RATE:0.03} # 일일 최대 손실 한도 3% (기본값, 운영 시 조정)
     max-position-ratio-per-stock: ${MAX_POSITION_RATIO_PER_STOCK:0.1} # 종목당 최대 비중 10%

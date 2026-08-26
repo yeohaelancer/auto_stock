@@ -20,6 +20,23 @@ public interface StockMasterMapper {
     List<String> findActiveUniverse();
 
     /**
+     * 관리종목만 제외한(거래정지 여부는 무시한) 시세/피처 수집 대상 종목코드 목록을 조회한다.
+     * Fetch the price/feature collection target list, excluding only managed stocks (halt status is ignored).
+     *
+     * findActiveUniverse()와 분리한 이유: is_trading_halt는 "최근 시세 부재" 휴리스틱으로 찍히는데,
+     * 만약 시세 수집 자체를 findActiveUniverse()(거래정지 제외) 기준으로 돌리면 —
+     * 신규 종목은 시세를 받은 적이 없어 즉시 거래정지로 마킹되고, 거래정지 종목은 시세를 못 받으니
+     * 영원히 해제(markActiveAsResumed)도 안 되는 순환 잠김(deadlock)이 발생한다.
+     * 그래서 "매매 대상 여부"(findActiveUniverse)와 "시세 수집 대상 여부"(이 메서드)를 분리한다.
+     * Kept separate from findActiveUniverse(): is_trading_halt is set by a "no recent price" heuristic —
+     * if collection itself only ran over findActiveUniverse() (halt-excluded), a freshly added stock would
+     * never have any price yet, so it would be flagged halted immediately, and a halted stock could never
+     * receive fresh price to get un-flagged by markActiveAsResumed — a self-sustaining deadlock. So "is this
+     * tradable" (findActiveUniverse) and "should we collect price for this" (this method) are kept separate.
+     */
+    List<String> findCollectionUniverse();
+
+    /**
      * cutoff 이후 price_history에 시세가 한 건도 없는 종목을 거래정지 후보로 표시한다 (preMarketJob, 휴리스틱).
      * Flags stocks with no price_history rows since cutoff as suspected halted (preMarketJob, heuristic).
      *

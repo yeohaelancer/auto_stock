@@ -6,47 +6,57 @@
     <!-- Excludes managed/halted stocks (design doc §5.3) -->
     <select id="findActiveUniverse" resultType="string">
         SELECT stock_code
-        FROM stock_master
+        FROM trading_stock_master
         WHERE is_managed = FALSE
           AND is_trading_halt = FALSE
           AND deleted_at IS NULL
         ORDER BY stock_code
     </select>
 
+    <!-- 관리종목만 제외 — 거래정지 종목도 시세는 계속 수집해야 markActiveAsResumed가 해제할 수 있다 -->
+    <!-- Excludes only managed stocks — halted stocks must still get price collected so markActiveAsResumed can un-flag them -->
+    <select id="findCollectionUniverse" resultType="string">
+        SELECT stock_code
+        FROM trading_stock_master
+        WHERE is_managed = FALSE
+          AND deleted_at IS NULL
+        ORDER BY stock_code
+    </select>
+
     <update id="markStaleAsHalted">
-        UPDATE stock_master
-        SET is_trading_halt = TRUE, updated_at = now()
+        UPDATE trading_stock_master
+        SET is_trading_halt = TRUE, updated_at = CURRENT_TIMESTAMP
         WHERE is_trading_halt = FALSE
           AND deleted_at IS NULL
           AND stock_code NOT IN (
-              SELECT DISTINCT stock_code FROM price_history WHERE trade_datetime >= #{cutoff}
+              SELECT DISTINCT stock_code FROM trading_price_history WHERE trade_datetime >= #{cutoff}
           )
     </update>
 
     <update id="markActiveAsResumed">
-        UPDATE stock_master
-        SET is_trading_halt = FALSE, updated_at = now()
+        UPDATE trading_stock_master
+        SET is_trading_halt = FALSE, updated_at = CURRENT_TIMESTAMP
         WHERE is_trading_halt = TRUE
           AND deleted_at IS NULL
           AND stock_code IN (
-              SELECT DISTINCT stock_code FROM price_history WHERE trade_datetime >= #{cutoff}
+              SELECT DISTINCT stock_code FROM trading_price_history WHERE trade_datetime >= #{cutoff}
           )
     </update>
 
     <insert id="upsertAutoSelected">
-        INSERT INTO stock_master (stock_code, stock_name, market_type, is_auto_selected)
+        INSERT INTO trading_stock_master (stock_code, stock_name, market_type, is_auto_selected)
         VALUES (#{stockCode}, #{stockName}, #{marketType}, TRUE)
-        ON CONFLICT (stock_code) DO UPDATE SET
-            stock_name = EXCLUDED.stock_name,
-            market_type = EXCLUDED.market_type,
+        ON DUPLICATE KEY UPDATE
+            stock_name = VALUES(stock_name),
+            market_type = VALUES(market_type),
             is_auto_selected = TRUE,
             deleted_at = NULL,
-            updated_at = now()
+            updated_at = CURRENT_TIMESTAMP
     </insert>
 
     <update id="deactivateAutoSelectedNotIn">
-        UPDATE stock_master
-        SET deleted_at = now(), updated_at = now()
+        UPDATE trading_stock_master
+        SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
         WHERE is_auto_selected = TRUE
           AND deleted_at IS NULL
         <if test="stockCodes != null and !stockCodes.isEmpty()">

@@ -4,13 +4,17 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.jdwork.autotrading.config.KiwoomApiProperties;
 import com.jdwork.autotrading.market.auth.KiwoomTokenClient;
 import com.jdwork.autotrading.market.dto.PriceBar;
+import io.github.bucket4j.Bandwidth;
+import io.github.bucket4j.Bucket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -45,10 +49,34 @@ public class KiwoomMarketRestClient implements KiwoomMarketClient {
 
     private final WebClient webClient;
     private final KiwoomTokenClient tokenClient;
+    private final Bucket rateLimiter;
 
-    public KiwoomMarketRestClient(WebClient.Builder builder, KiwoomApiProperties properties, KiwoomTokenClient tokenClient) {
+    /**
+     * ⚠️ 종목 유니버스를 순회하며 이 클라이언트를 반복 호출하는 배치(collectPriceHistoryAndFeatures 등)가
+     * 아무 제한 없이 연속 호출하면 429 Too Many Requests가 발생하는 것을 실제 운영 중 확인 — 종목별
+     * 호출 사이에 초당 요청 한도를 두어 막는다 (trading.kiwoom.rate-limit-per-second).
+     * ⚠️ Observed in real operation: a batch that loops over the stock universe calling this client back
+     * to back (e.g. collectPriceHistoryAndFeatures) triggers 429 Too Many Requests with no throttling —
+     * gate it with a per-second request cap between per-stock calls (trading.kiwoom.rate-limit-per-second).
+     */
+    public KiwoomMarketRestClient(WebClient.Builder builder, KiwoomApiProperties properties, KiwoomTokenClient tokenClient,
+                                   @Value("${trading.kiwoom.rate-limit-per-second}") int rateLimitPerSecond) {
         this.webClient = builder.baseUrl(properties.getBaseUrl()).build();
         this.tokenClient = tokenClient;
+        // 용량을 rateLimitPerSecond가 아니라 1로 둔 이유: capacity=N으로 두면 시작 시 N개가 한꺼번에
+        // "버스트" 소모될 수 있어(첫 N종목이 거의 동시에 나감), 실측 결과 초당 4건 한도로도 429가 계속
+        // 발생했다. capacity=1 + (1000/N)ms마다 1개 리필로 바꿔 완전히 균등한 간격으로만 나가게 한다.
+        // Capacity is set to 1, not rateLimitPerSecond: capacity=N lets N requests burst out nearly at
+        // once at startup (the first N stocks fire almost simultaneously) — in practice this still hit
+        // 429 even at a 4/sec cap. Using capacity=1 with one refill every (1000/N)ms instead forces
+        // strictly evenly-spaced requests with no burst.
+        long intervalMillis = Math.max(1L, 1000L / rateLimitPerSecond);
+        this.rateLimiter = Bucket.builder()
+                .addLimit(Bandwidth.builder()
+                        .capacity(1)
+                        .refillGreedy(1, Duration.ofMillis(intervalMillis))
+                        .build())
+                .build();
     }
 
     @Override
@@ -60,6 +88,7 @@ public class KiwoomMarketRestClient implements KiwoomMarketClient {
         }
 
         try {
+            rateLimiter.asBlocking().consume(1); // 종목 순회 호출 사이 초당 요청 한도 대기 (block until under the per-second cap)
             String queryDate = LocalDate.now(KST).format(YYYYMMDD);
             DailyPriceResponse response = webClient.post()
                     .uri(DAILY_PRICE_PATH)
