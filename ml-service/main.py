@@ -23,7 +23,7 @@ import os
 
 import joblib
 import pandas as pd
-import psycopg2
+import pymysql
 from fastapi import FastAPI
 from pydantic import BaseModel
 
@@ -54,19 +54,19 @@ class PredictResponse(BaseModel):
 
 
 def _fetch_latest_features(stock_code: str) -> tuple | None:
-    """feature_daily에서 해당 종목의 최신 피처 1건을 조회한다. 없으면 None (조회 실패도 None으로 처리, fail-safe)."""
-    """Fetch the latest feature_daily row for the stock. Returns None if absent (also fail-safe on query errors)."""
+    """trading_feature_daily에서 해당 종목의 최신 피처 1건을 조회한다. 없으면 None (조회 실패도 None으로 처리, fail-safe)."""
+    """Fetch the latest trading_feature_daily row for the stock. Returns None if absent (also fail-safe on query errors)."""
     try:
-        conn = psycopg2.connect(
+        conn = pymysql.connect(
             host=os.getenv("DB_HOST", "localhost"),
-            port=os.getenv("DB_PORT", "5432"),
-            dbname=os.getenv("DB_NAME", "autotrading"),
-            user=os.getenv("DB_USER", "autotrading"),
-            password=os.getenv("DB_PASSWORD", ""),
+            port=int(os.getenv("DB_PORT", "3306")),
+            db=os.getenv("DB_NAME", "JDWORKS"),
+            user=os.getenv("DB_USER", "jdwadmin"),
+            password=os.getenv("DB_PASSWORD", "!jdwadmin"),
             connect_timeout=3,
         )
     except Exception:
-        logger.exception("feature_daily 조회용 DB 연결 실패 (failed to connect to DB for feature_daily lookup)")
+        logger.exception("trading_feature_daily 조회용 DB 연결 실패 (failed to connect to DB for trading_feature_daily lookup)")
         return None
 
     try:
@@ -74,16 +74,26 @@ def _fetch_latest_features(stock_code: str) -> tuple | None:
             cur.execute(
                 """
                 SELECT ma5, ma20, rsi14, macd, bollinger_upper, bollinger_lower
-                FROM feature_daily
+                FROM trading_feature_daily
                 WHERE stock_code = %s AND deleted_at IS NULL
                 ORDER BY base_date DESC
                 LIMIT 1
                 """,
                 (stock_code,),
             )
-            return cur.fetchone()
+            row = cur.fetchone()
+            if row is None:
+                return None
+            # pymysql은 DECIMAL 컬럼을 decimal.Decimal로 반환한다 — 이걸 그대로 1행짜리
+            # DataFrame에 넣으면 object dtype이 되어 LightGBM predict가 거부한다(실제 호출 중 발견:
+            # "pandas dtypes must be int, float or bool"). None은 피처 결측 판정에 써야 하므로 그대로 둔다.
+            # pymysql returns DECIMAL columns as decimal.Decimal — putting those straight into a
+            # single-row DataFrame yields object dtype, which LightGBM's predict rejects (found via a
+            # real call: "pandas dtypes must be int, float or bool"). None values are kept as-is since
+            # the caller uses them to detect missing features.
+            return tuple(None if v is None else float(v) for v in row)
     except Exception:
-        logger.exception("feature_daily 조회 실패 (feature_daily query failed)")
+        logger.exception("trading_feature_daily 조회 실패 (trading_feature_daily query failed)")
         return None
     finally:
         conn.close()
